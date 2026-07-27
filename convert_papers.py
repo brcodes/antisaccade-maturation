@@ -59,7 +59,7 @@ def convert_pdf(pdf_path: Path, output_dir: Path, models: dict, extract_figures:
     t0 = time.time()
 
     # Build converter
-    converter = PdfConverter(artifact_dict=models)
+    converter = PdfConverter(artifact_dict=models, config={"use_llm": False})
 
     # Run conversion
     rendered = converter(str(pdf_path))

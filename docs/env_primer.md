@@ -45,7 +45,7 @@ From inside the `antisaccade_maturation/` directory:
 make build
 ```
 
-This runs `docker build -t antisaccade_maturation .` and installs everything — Python, PyTorch, JAX, marker, scikit-learn, the full stack. Takes 10–20 minutes the first time depending on your connection. Subsequent builds are fast because Docker caches layers; only layers below a changed line re-run.
+This runs `docker build -t antisaccade .` and installs everything — Python, PyTorch, JAX, marker, scikit-learn, the full stack. Takes 10–20 minutes the first time depending on your connection. Subsequent builds are fast because Docker caches layers; only layers below a changed line re-run.
 
 Rebuild only when you change `requirements.txt` or `Dockerfile`. Not between runs.
 
@@ -62,8 +62,8 @@ Expands to:
 docker run --rm \
     -v $(PWD):/workspace \
     -v $(PWD)/.cache:/workspace/.cache \
-    antisaccade_maturation \
-    code/train.py
+    antisaccade \
+    /workspace/code/train.py
 ```
 
 **With GPU:**
@@ -79,8 +79,8 @@ The `make` targets don't handle arguments directly. For anything beyond a bare s
 docker run --rm \
     -v $(PWD):/workspace \
     -v $(PWD)/.cache:/workspace/.cache \
-    antisaccade_maturation \
-    code/train.py --maturation 0.0 --epochs 500 --output outputs/young
+    antisaccade \
+    /workspace/code/train.py --maturation 0.0 --epochs 500 --output outputs/young
 ```
 
 With GPU:
@@ -88,8 +88,8 @@ With GPU:
 docker run --rm --gpus all \
     -v $(PWD):/workspace \
     -v $(PWD)/.cache:/workspace/.cache \
-    antisaccade_maturation \
-    code/train.py --maturation 1.0 --epochs 500 --output outputs/adult
+    antisaccade \
+    /workspace/code/train.py --maturation 1.0 --epochs 500 --output outputs/adult
 ```
 
 ---
@@ -100,8 +100,8 @@ docker run --rm --gpus all \
 docker run --rm \
     -v $(PWD):/workspace \
     -v $(PWD)/.cache:/workspace/.cache \
-    antisaccade_maturation \
-    convert_papers.py --input papers/ --output converted/
+    antisaccade \
+    /workspace/convert_papers.py --input docs/crucial_literature/ --output docs/crucial_literature/
 ```
 
 The first run downloads marker's model weights (~1–2 GB) into `.cache/`. Every subsequent run is instant because the cache is mounted as a volume and persists.
@@ -128,7 +128,7 @@ From inside a shell (`make shell`), or as a one-off:
 docker run --rm \
     -v $(PWD):/workspace \
     -v $(PWD)/.cache:/workspace/.cache \
-    antisaccade_maturation - << 'EOF'
+    antisaccade - << 'EOF'
 import torch, jax, numpy, scipy, sklearn, optax
 print(f"torch:   {torch.__version__}  |  CUDA: {torch.cuda.is_available()}")
 print(f"jax:     {jax.__version__}  |  backend: {jax.default_backend()}")
