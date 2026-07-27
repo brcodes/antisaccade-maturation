@@ -45,8 +45,7 @@ Each trial proceeds as follows (values from Zhu et al. 2024 / Salinas et al. 201
 **Raw processing time (rPT)** = time from cue onset to saccade commitment.
 This is the key independent variable. rPT = RT (reaction time from go signal) − Gap.
 Because RT is roughly fixed by motor urgency and gap is variable, manipulating gap
-indirectly samples different rPTs. Trials with short gaps → short rPTs (motor plan commits
-before cue is fully processed). Trials with long gaps → long rPTs (cue processed before commitment).
+indirectly samples different rPTs. Trials with short gaps → long rPTs (cue processed well before commitment). Trials with long gaps → short rPTs (cue onset close to commitment, little processing time).
 
 **Note for implementation**: In simulation, rPT is directly controlled, which is cleaner
 than simulating the gap manipulation. Generate trials at evenly spaced rPTs from 0 to 300 ms.
