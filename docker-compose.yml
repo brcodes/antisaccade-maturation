@@ -1,0 +1,79 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.yml  —  Antisaccade maturation modeling environment
+#
+# Usage (see Makefile for shortcuts):
+#
+#   CPU shell:
+#     docker compose --profile cpu run --rm antisaccade-cpu
+#
+#   GPU shell:
+#     docker compose --profile gpu run --rm antisaccade-gpu
+#
+#   JupyterLab (CPU):
+#     docker compose --profile cpu run --rm --service-ports antisaccade-cpu jupyter
+#
+#   Run a script directly:
+#     docker compose --profile cpu run --rm antisaccade-cpu python code/train.py
+#
+# Environment variables (set in .env, see .env.example):
+#   PREWARM_MARKER=1   pre-download marker weights on startup
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-common: &common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  working_dir: /workspace
+  stdin_open: true     # keep stdin open for interactive shell
+  tty: true            # allocate pseudo-TTY
+  env_file:
+    - .env
+  volumes:
+    # Your code — mounted live so edits outside the container are instant
+    - ./code:/workspace/code
+    # PDFs to convert
+    - ./papers:/workspace/papers
+    # Converted markdown output
+    - ./converted:/workspace/converted
+    # Persistent cache: marker/surya weights, HuggingFace models, CRG SQLite graphs
+    # This survives container restarts — you only download weights / build graphs once
+    - marker_cache:/workspace/.cache
+  ports:
+    - "8888:8888"    # JupyterLab
+
+services:
+
+  # ── CPU variant ─────────────────────────────────────────────────────────────
+  antisaccade-cpu:
+    <<: *common
+    profiles: [cpu]
+    image: antisaccade:cpu
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USE_GPU: "0"
+
+  # ── GPU variant ─────────────────────────────────────────────────────────────
+  antisaccade-gpu:
+    <<: *common
+    profiles: [gpu]
+    image: antisaccade:gpu
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USE_GPU: "1"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  # Named volume for persistent model weight cache
+  # Stored in Docker's volume store, survives `docker compose down`
+  # Remove with: docker volume rm <project>_marker_cache
+  marker_cache:
