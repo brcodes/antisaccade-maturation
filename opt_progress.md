@@ -147,3 +147,98 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
 What this sweep really tells you: the D≈0 problem at θ=0.75 isn't something τ_exo can rescue. The burst decays at the right timescale but the threshold is still killing the vortex depth. This is a structural tension in the current architecture — the next lever to try is sigma_noise, which governs trial-to-trial variability and directly produces D in the tachometric curve (more noise → deeper apparent dip via trial averaging). That's a Phase 3 knob per the OPT_README, but you may need to peek at it earlier given the D problem is showing up so persistently.
 
 Alternatively, before going there — are you confident the D extraction is correct? With frac_crossed ≈ 0.50 everywhere, the curve near the vortex is computed from very thin trial counts and the dip can genuinely vanish as a measurement artifact rather than a model failure.
+
+Evaluated that. Gpt 5.4mini, home repo.
+Claude response (first optimization conversation, Web):
+
+This reframes where you are. The problem isn't θ vs τ_exo — it's that the exogenous capture mechanism isn't strong enough to pull proportion-correct below chance at early rPTs, which is the biological signature of the vortex.
+
+what governs whether that below-chance dip forms at all?
+
+The three levers that directly control whether the curve crosses below chance:
+
+a_exo — amplitude of the exogenous burst. This is your primary suspect. You fixed it at 3 across sweeps 3 and 4 after seeing a_exo=5 hurt in sweep 3, but that finding was confounded: sweep 3 was still using wrong targets, and the a_exo=5 runs may have been penalized for other reasons (A distortion, frac_crossed effects). With correct targets and τ_exo now confirmed at 30, a_exo deserves a fresh isolated look.
+
+sigma_noise — trial-to-trial noise. More noise widens the distribution of outcomes at each rPT, which deepens the apparent dip in the averaged curve. This is Phase 3 normally but you're effectively already there given D=0 is your blocker.
+
+commit_temp — softness of the commitment decision. A very sharp commitment (low temp) means once the accumulator tips toward the exogenous direction it fully commits, which can deepen the vortex. Worth knowing the current default.
+
+Your current defaults are commit_temp = 0.2 and sigma_noise = 0.1, defined in task_params.py:57 and task_params.py:61.
+
+
+One thing to verify in code before running: confirm that a_exo scales the burst subtractively at the accumulator (i.e. it pushes the decision variable toward the wrong response, not just adds noise). If it's implemented as an additive perturbation in the wrong direction it should work; if it's something else, the mechanism may not be capable of producing below-chance performance regardless of magnitude.
+
+Gpt-5.4mini
+
+It is not implemented as a subtractive accumulator term. In trial_generator.py:63, a_exo multiplies an exponential burst, that burst is added to a sustained cue drive, and the result is written into either the left or right cue input channel after cue onset. That means the model gets an extra positive side-specific input, not a built-in negative push toward the wrong choice.
+
+The decision variable itself is formed later in lrrnn.py:43 from learned recurrent and input weights, and the readout in readout.py:1 is linear. So the only way a_exo can produce below-chance performance is indirectly, through the learned weights turning that side-specific burst into a bias toward the reflexive/wrong response. There is no code-level guarantee that the burst is “wrong-direction” in the accumulator; that behavior has to emerge from training.
+
+Claude:
+
+The vortex cannot exist at initialization — it has to be learned. The burst is a positive side-specific input, and whether that drives the accumulator toward the wrong response depends entirely on what the recurrent weights learn to do with it. At 50 smoke epochs with a fresh random init, the weights almost certainly haven't learned to invert the burst into a wrong-direction bias yet. So D≈0 and vortex_depth≥0 may not mean the mechanism is broken — it may just mean the model hasn't trained long enough to discover that the burst should produce capture errors.
+
+This reframes the Phase 0 problem entirely. You've been interpreting D=0 as a dynamic-range / architectural failure, but it's more likely a training horizon problem. The plumbing is correct; the weights just need more epochs to learn the inversion.
+
+ran:
+
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 \
+    --set task.tau_exo=30 \
+    --set task.a_exo=3 \
+    --sweep train.epochs=50,150,300,500 \
+    --no-plots --top 4
+
+goal- Watch for when vortex_depth_m0 first goes negative. If it crosses below chance somewhere between 150–500 epochs, you have your answer: the smoke epoch budget was the bottleneck, not the parameters. If it's still ≥0 at 500 epochs, then the weight learning genuinely isn't discovering the capture mechanism and you need to look at the loss landscape — specifically whether the behavioral loss has any gradient signal pointing toward wrong-direction responses at short rPT, or whether the loss is blind to the vortex until A and t_rise are already fit.
+
+One other thing worth checking in the loss function: is D explicitly in the behavioral loss, or is it only implicit through the tachometric curve shape? If the loss only penalizes A and t_rise directly and treats D as emergent, the gradient toward vortex formation may be very weak early in training.
+
+Results:
+Claude:
+
+The big news: the vortex IS there at all epoch counts. Every single run has vortex_depth < 0 — the curve is genuinely crossing below chance. The D≈0 problem you've been chasing was purely a Gaussian fit failure on a real-but-shallow dip, not an absent mechanism. The architecture is working.
+
+The score being non-monotone in epochs is the key diagnostic. 50 wins on score but for the wrong reason (shallow dip → D=0 → low D penalty + good t_vortex by accident). 300 is the genuine best. This means the smoke epoch budget of 50 has been giving you misleading rankings throughout sweeps 1–4 — configs that scored well may have just been accidentally producing narrow unfittable dips.
+
+Recommended next step — re-run your best θ/a_exo configs at 300 epochs to get honest rankings:
+
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set train.epochs=300 \
+    --set task.tau_exo=30 \
+    --sweep task.threshold=0.7,0.72,0.75,0.78 \
+    --sweep task.a_exo=3,5,8 \
+    --no-plots --top 6
+
+
+Res:
+θ=0.75, a_exo=3 holds as winner — and now it's a trustworthy ranking. These are honest 300-epoch scores, not 50-epoch artifacts.
+
+The most important pattern in this sweep: t_vortex has essentially converged to ~115–118ms across every viable config. It's no longer a free variable — the model is finding the same vortex timing regardless of θ or a_exo. That's actually good news architecturally; it means the exogenous burst timescale (τ_exo=30) is the dominant controller of when the dip occurs, and that part is working. The ~10ms gap from target (105ms) is small and likely closeable with τ_exo fine-tuning later.
+
+The two remaining problems are A and D, and they're linked. A is sitting around 0.78–0.81 across the board (target 0.92) — the model isn't reaching high enough asymptotic accuracy. D is 0.13–0.17 at best (target 0.28) — the vortex depth is real but shallow. Both of these are undertrained symptoms, not wrong-parameter symptoms. The model knows where to put the vortex and roughly when to rise, but hasn't fully learned the magnitude of either.
+
+a_exo=5 at θ=0.7 is interesting second-place result: t_rise=152ms (nearly perfect), t_vortex=118ms, D=0.167 — a genuinely competitive config that might overtake the winner with more epochs.
+
+The Phase 1 gate is now in reach. You have a stable, non-degenerate training config (θ=0.75, a_exo=3, τ_exo=30)
+
+Recap:
+The model knows 
+1) where to put the vortex (D)
+2) when to put the vortex (t_vortex)
+3) and roughly how much to rise (A)
+   
+but it hasn't fully learned the magnitude of vortex or extent of accuracy rise (D,A), and t_vortex is a little off.
+
+Now:
+So Learning Rate search: push A and D toward their correct maxima, minima, but don't push out of convergence basin you have discovered.
+
+Later:
+τ_exo fine-tuning for t_vortex
+
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 \
+    --set task.a_exo=3 \
+    --set task.tau_exo=30 \
+    --set train.epochs=300 \
+    --sweep train.lr=1e-4,3e-4,1e-3,3e-3 \
+    --no-plots --top 4
