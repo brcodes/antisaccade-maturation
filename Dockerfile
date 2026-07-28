@@ -42,8 +42,9 @@ WORKDIR /workspace
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip
 
-# PyTorch: CUDA-capable wheel. Uses GPU if present, CPU otherwise — no code change needed.
-RUN pip install --no-cache-dir torch torchvision \
+# PyTorch is required for marker/surya; avoid torchvision because transformers
+# can import it eagerly and fail on mismatched wheel builds.
+RUN pip install --no-cache-dir torch \
         --index-url https://download.pytorch.org/whl/cu121
 
 # JAX: same principle — jax[cuda12] uses GPU if present, CPU otherwise.

@@ -1,0 +1,15 @@
+{
+  "mcp": {
+    "code-review-graph": {
+      "type": "local",
+      "command": [
+        "/opt/miniconda3/envs/tcia-lung1-seg-class-cpu/bin/python3.10",
+        "-m",
+        "code_review_graph",
+        "serve",
+        "--repo",
+        "/Users/brycerogers/Documents/antisaccade_maturation"
+      ]
+    }
+  }
+}
