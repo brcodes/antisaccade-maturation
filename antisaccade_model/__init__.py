@@ -21,4 +21,18 @@ Design decisions (fixed for this implementation):
     * CPU only.
 """
 
+# --- OpenMP / BLAS runtime guard -------------------------------------------
+# Some conda environments ship a numpy/SciPy BLAS whose OpenMP runtime conflicts
+# with the one bundled by PyTorch, causing a hard segmentation fault (e.g. inside
+# numpy.linalg.svd via scikit-learn's PCA) once both are loaded. These settings
+# must be applied *before* torch / numpy are first imported, so they live here at
+# package import time. ``setdefault`` keeps any values the user has already set.
+# The model is small (N=200) and the per-timestep loop dominates, so pinning BLAS
+# to a single thread has no meaningful performance cost.
+import os as _os
+
+_os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+_os.environ.setdefault("OMP_NUM_THREADS", "1")
+_os.environ.setdefault("MKL_NUM_THREADS", "1")
+
 __all__ = ["task", "model", "training", "analysis", "visualization"]
