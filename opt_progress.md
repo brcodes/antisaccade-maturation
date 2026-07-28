@@ -103,3 +103,47 @@ Proceed to Next-step 1 (finer θ sweep) to lock Phase 0, then LR (Phase 1).
 - Exact θ that best trades crossing vs. timing (Next-step 1).
 - Should the *library default* `TaskParams.threshold` be lowered, or should θ
   stay a swept knob only? (Decide after Next-step 1.)
+
+
+### 2026-07-28
+
+Thresh 0.7 looked the best, (0.2,0.3...)
+Didn't nan out the t_rise for m=0
+(that nan could have been task. or eval.'s rpt_step=30 (too coarse) or trials_per_gap=100 (not enough data for smooth interpolation) (of 75% point))
+
+Stuck with 0.7
+Ran
+
+(tcia-lung1-seg-class-cpu) brycerogers@Bryces-MacBook-Pro antisaccade_maturation % python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --sweep task.threshold=0.6,0.65,0.7,0.75,0.8 \
+    --sweep task.a_exo=3,5 \
+    --no-plots --top 5
+
+This keeps θ near the winner while testing whether a_exo can pull the vortex timing back toward 105ms without wrecking D. Those two interact directly — a_exo sets the strength of the burst, threshold sets how long the race runs before it matters. You want that 10-combo grid to tell you if there's a (θ, a_exo) pair that keeps D≈0.28 while pulling t_vortex down from 200ms toward 105ms.
+
+Res:
+θ=0.75, a_exo=3 wins clearly — but it's a Pyrrhic victory. The score (0.297) looks great on paper, but look at why: it nailed t_vortex (106ms ≈ 105 target) while D collapsed to essentially zero (3.75e-10). The scorer is rewarding the timing hit but the vortex depth is completely dead. The model found a configuration where the timing is right but there's no actual dip — which is mechanistically wrong. It's the opposite problem from θ=0.7 (which had perfect D but broken timing).
+
+The a_exo=5 pattern is revealing. Across every θ, raising a_exo from 3→5 made scores worse, often dramatically. Higher exogenous burst strength is hurting rather than helping at this stage — likely because it's overpowering the race and distorting A. Leave a_exo at 3 and don't revisit until Phase 3.
+
+What you're seeing is a θ vs D tradeoff:
+
+θ too low (0.6–0.7): t_vortex blows out to 200ms, timing broken
+θ too high (0.75–0.8): D collapses toward zero, vortex disappears
+The sweet spot — if it exists at this smoke scale — is somewhere in between, and neither 0.7 nor 0.75 fully gets there
+
+The core tension: D and t_vortex are being controlled by the same knob (θ) in opposite directions right now. This is a signal that you need a second degree of freedom to decouple them. tau_exo (the timescale of the exogenous burst) is the natural candidate — it governs how quickly the burst decays, which affects timing without necessarily killing depth the way θ does.
+
+Kept a_exo=3.
+
+Searched tau_exo (originally 30). 
+
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.a_exo=3 \
+    --sweep task.threshold=0.7,0.72,0.75,0.78 \
+    --sweep task.tau_exo=10,20,30 \
+    --no-plots --top 6
+
+What this sweep really tells you: the D≈0 problem at θ=0.75 isn't something τ_exo can rescue. The burst decays at the right timescale but the threshold is still killing the vortex depth. This is a structural tension in the current architecture — the next lever to try is sigma_noise, which governs trial-to-trial variability and directly produces D in the tachometric curve (more noise → deeper apparent dip via trial averaging). That's a Phase 3 knob per the OPT_README, but you may need to peek at it earlier given the D problem is showing up so persistently.
+
+Alternatively, before going there — are you confident the D extraction is correct? With frac_crossed ≈ 0.50 everywhere, the curve near the vortex is computed from very thin trial counts and the dip can genuinely vanish as a measurement artifact rather than a model failure.
