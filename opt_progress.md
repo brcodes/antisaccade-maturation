@@ -1,240 +1,163 @@
 # opt_progress.md — Behavior-Fit Optimization Log
 
-Live results + decision log for the optimization harness. Reference doc (modes,
-artifacts, sweep philosophy, scale-up) is [OPT_README.md](OPT_README.md).
+Live results + decision log for the optimization harness. Reference doc (modes, artifacts, sweep philosophy, scale-up) is [OPT_README.md](OPT_README.md).
 
-**How to use this file:** append one dated entry per accepted finding. Record the
-command, the key numbers, the interpretation, and the resulting decision. Keep
-the **Current best config** and **Next steps** sections at the top up to date.
+Append one dated entry per accepted finding. Record the command, the key numbers, the interpretation, and the resulting decision. Keep the current best config and next steps sections at the top up to date.
 
 ---
 
 ## Current best config (living)
 
-| Field | Value | Source |
+| field | value | source |
 |---|---|---|
-| `task.threshold` | **0.5** (was 1.0) | Entry 1 |
-| `task.a_exo` | 3.0 | Entry 1 |
-| everything else | `smoke` preset defaults | — |
+| `task.threshold` | 0.75 | sweep 3 |
+| `task.a_exo` | 3.0 | sweep 3 |
+| `task.tau_exo` | 30.0 (confirmed = library default) | sweep 4 |
+| `train.lr` | 3e-3 | sweep 11 |
+| `model.n_hidden` | 100 | sweep 11 |
+| `train.epochs` | 300 | sweep 9 |
+| `train.batch_size` | 256 (library default) | confirmed |
+| `task.t_pre` | 100 (restoring full) | pending |
+| `task.t_post` | 500 (restoring full) | pending |
+| `task.rpt_step` | 10 (restoring full) | pending |
 
-**Current phase:** Phase 0 → 1 (plumbing verified; optimization not yet tuned).
+**Current phase:** Phase 2 capacity confirmed at n_hidden=100. At practical limit of smoke resolution — scaling up to full timeline and bin resolution before further hyperparameter search.
 
 ---
 
 ## Next steps (specific, ordered)
 
-Following the [OPT_README §7](OPT_README.md) phase framework. Do these top-down;
-freeze each result here before moving on.
+- Restore full timeline and measurement resolution. Single diagnostic run, no sweep. Share training log to confirm loss curve cleans up:
+  ```bash
+  python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+      --set task.threshold=0.75 \
+      --set task.a_exo=3 \
+      --set task.tau_exo=30 \
+      --set model.n_hidden=100 \
+      --set train.lr=3e-3 \
+      --set train.epochs=300 \
+      --set task.t_pre=100 \
+      --set task.t_post=500 \
+      --set task.rpt_step=10 \
+      --no-plots
+  ```
+  Success gate: loss shows genuine downward trend rather than 3.5–9.2 pinball. Score improves meaningfully vs 0.132.
 
-1. **Finish Phase 0 — pin the crossing knob.** Confirm the threshold with a
-   finer 1-D sweep and pick the smallest θ that keeps `frac_crossed` in
-   0.5–0.9 **without** wrecking behavioral stats:
-   ```bash
-   python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
-       --sweep task.threshold=0.4,0.5,0.6,0.7 --no-plots --top 4
-   ```
-   - Watch: `frac_crossed_m*` (want 0.5–0.9) **and** `score`.
-   - Open question from Entry 1: θ=0.3 crossed more but scored **worse** (2.5 vs
-     0.10). Hypothesis: too-low θ commits too early → bad `t_rise` / vortex.
-     This sweep should confirm the non-monotonic θ↔score relationship.
+- If full resolution stabilizes training, step n_hidden to 128 at the new resolution, re-confirming LR stability. Then 200.
 
-2. **Phase 1 — learning rate.** With θ fixed, sweep LR first:
-   ```bash
-   python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
-       --set task.threshold=0.5 \
-       --sweep train.lr=3e-4,1e-3,3e-3 --no-plots --top 3
-   ```
-   - Success gate: clean, monotone-ish loss decrease over 50 epochs; no NaNs.
-
-3. **Phase 1 — stability follow-ups (only if LR alone is unstable).**
-   `train.grad_clip`, then `train.batch_size`, then `train.warmup_epochs`.
-
-4. **Phase 2 — capacity.** Once LR is locked, sweep `model.n_hidden`
-   (e.g. 64,128) then `model.lambda_reg`. Look for `A` and a real vortex.
-
-5. **Then scale up** per [OPT_README §8](OPT_README.md): epochs → resolution →
-   full timeline → `n_hidden`=200 → full batch/epochs → promote to
-   `run_behavior_fit.py`.
-
-**Deferred (Phase 3–4, biological):** `commit_temp`/`option_temp`,
-`sigma_noise` → vortex depth `D`, `a_exo`/`tau_exo` → vortex timing/depth,
-maturation interpolation across `m`. Do not touch until a config trains + fits.
+- Phase 3 (biological, deferred): `commit_temp`/`option_temp`, `sigma_noise` → vortex depth D, `a_exo`/`tau_exo` → vortex timing/depth, maturation interpolation across m. Do not touch until a config trains and fits at full resolution.
 
 ---
 
-## Results log
+## 2026-07-28
 
-### Entry 1 — 2026-07-28 — Threshold is the Phase-0 gate
+### Targets bug fix
 
-**Context.** First runs of the new harness on the `smoke` preset. With the
-library-default `task.threshold = 1.0`, the decision race never reached the bound.
+Before any sweeps, discovered that `tachometric_targets.py` was not the source of truth feeding into the scorer. The actual coded targets are:
 
-**Observations.**
-- Default θ=1.0, single run (5 epochs): `frac_crossed = 0.00` for both `m`;
-  `t_rise` came back `nan` (untrained/degenerate curve). Score is meaningless in
-  this regime — the curve never forms.
-- Sweep `task.threshold=0.3,0.5 × task.a_exo=3,5` (3 epochs each), ranked:
+```python
+YOUNG_PARAMS = TCParams(A=0.92, t_rise=155.0, sigma_rise=25.0,
+                        t_vortex=105.0, D=0.28, sigma_vortex=25.0)
+ADULT_PARAMS = TCParams(A=0.97, t_rise=140.0, sigma_rise=15.0,
+                        t_vortex=106.0, D=0.27, sigma_vortex=20.0)
+```
 
-  | rank | threshold | a_exo | score | final_loss | frac_crossed (m0) |
-  |---|---|---|---|---|---|
-  | 1 | **0.5** | 3 | **0.1041** | 5.3923 | ~0.50 |
-  | 2 | 0.5 | 5 | 0.3793 | 5.1403 | — |
-  | 3 | 0.3 | 3 | 2.5051 | 5.5598 | — |
-  | 4 | 0.3 | 5 | 2.5078 | 5.5598 | — |
+The results.csv target columns in sweep 1 showed t_vortex≈93.9 (young) and D≈0.205 — meaningfully off from the above. Fix was applied before sweep 2. All sweeps from sweep 2 onward use correct targets. Sweep 1 rankings are directionally useful but not trusted for final comparison.
 
-**Interpretation.**
-- **`task.threshold` is the Phase-0 dynamic-range knob.** Dropping θ from 1.0 to
-  0.5 moved `frac_crossed` from 0.00 → ~0.50 and the score from meaningless →
-  0.10. This is the single change that made every downstream metric valid.
-- **θ is non-monotonic w.r.t. fit:** θ=0.3 crossed *more* but scored *worse*
-  (2.5). Lower θ ⇒ earlier commitment ⇒ distorted `t_rise` / vortex. So the goal
-  is not "maximize crossings" but "smallest θ that keeps crossings healthy
-  without corrupting timing." Flagged for the Next-step 1 finer sweep.
-- **`a_exo` (3 vs 5) was second-order** at this stage — real but small relative
-  to θ. Leave at 3.0 for now; revisit in the biological phase (vortex tuning).
-- `final_loss` and `score` disagree in ranking (θ=0.3 had lower loss but worse
-  score). Confirms the [OPT_README §6](OPT_README.md) point: **read
-  `frac_crossed` + `score`, not raw training loss.**
+---
 
-**Decision.** Adopt `task.threshold = 0.5` as the working smoke baseline.
-Proceed to Next-step 1 (finer θ sweep) to lock Phase 0, then LR (Phase 1).
+### Sweep 1 — θ grid, smoke, wrong targets
 
-**Open questions carried forward.**
-- Exact θ that best trades crossing vs. timing (Next-step 1).
-- Should the *library default* `TaskParams.threshold` be lowered, or should θ
-  stay a swept knob only? (Decide after Next-step 1.)
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --sweep task.threshold=0.2,0.3,0.5,0.7 --no-plots
+```
 
+θ=0.2 won on score (0.250) but only because the wrong D target (0.205) made its D=0.45 output look acceptable. θ=0.3 and θ=0.2 produced nan t_rise for m=0 — likely rpt_step=30 too coarse for interpolation. θ=0.7 scored second (0.383) with frac_crossed≈0.50. Rankings invalidated by wrong targets; re-run as sweep 2.
 
-### 2026-07-28
+---
 
-Thresh 0.7 looked the best, (0.2,0.3...)
-Didn't nan out the t_rise for m=0
-(that nan could have been task. or eval.'s rpt_step=30 (too coarse) or trials_per_gap=100 (not enough data for smooth interpolation) (of 75% point))
+### Sweep 2 — θ grid, smoke, corrected targets
 
-Stuck with 0.7
-Ran
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --sweep task.threshold=0.2,0.3,0.5,0.7 --no-plots
+```
 
-(tcia-lung1-seg-class-cpu) brycerogers@Bryces-MacBook-Pro antisaccade_maturation % python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+Target fix completely reshuffled rankings. θ=0.7 wins (score 1.522), θ=0.2 drops to 3rd (score 2.550). θ=0.7 is the only config that hit D≈0.28 for m=0 nearly exactly — mechanistically correct, since higher θ gives the exogenous burst more time to drag the accumulator down. However t_rise=230ms (+75ms late) and t_vortex=200ms (nearly double target). The model finds the right shape but timing is badly stretched. Nan plague on t_rise for three of four configs — rpt_step coarseness flagged but not addressed yet. θ=0.7 adopted as working baseline.
+
+---
+
+### Sweep 3 — θ × a_exo grid
+
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --sweep task.threshold=0.6,0.65,0.7,0.75,0.8 \
     --sweep task.a_exo=3,5 \
     --no-plots --top 5
+```
 
-This keeps θ near the winner while testing whether a_exo can pull the vortex timing back toward 105ms without wrecking D. Those two interact directly — a_exo sets the strength of the burst, threshold sets how long the race runs before it matters. You want that 10-combo grid to tell you if there's a (θ, a_exo) pair that keeps D≈0.28 while pulling t_vortex down from 200ms toward 105ms.
+θ=0.75, a_exo=3 wins (score 0.297) with t_vortex=106ms nearly on target, but D collapses to ~0. θ=0.7, a_exo=3 holds D≈0.28 (exact) but t_vortex=200ms. a_exo=5 universally worse across all θ — overpowers the race and distorts A. Key finding: D and t_vortex are anti-correlated across θ at fixed a_exo. Need a second degree of freedom to decouple them. τ_exo identified as the candidate. a_exo locked at 3.0.
 
-Res:
-θ=0.75, a_exo=3 wins clearly — but it's a Pyrrhic victory. The score (0.297) looks great on paper, but look at why: it nailed t_vortex (106ms ≈ 105 target) while D collapsed to essentially zero (3.75e-10). The scorer is rewarding the timing hit but the vortex depth is completely dead. The model found a configuration where the timing is right but there's no actual dip — which is mechanistically wrong. It's the opposite problem from θ=0.7 (which had perfect D but broken timing).
+---
 
-The a_exo=5 pattern is revealing. Across every θ, raising a_exo from 3→5 made scores worse, often dramatically. Higher exogenous burst strength is hurting rather than helping at this stage — likely because it's overpowering the race and distorting A. Leave a_exo at 3 and don't revisit until Phase 3.
+### Sweep 4 — θ × τ_exo grid
 
-What you're seeing is a θ vs D tradeoff:
-
-θ too low (0.6–0.7): t_vortex blows out to 200ms, timing broken
-θ too high (0.75–0.8): D collapses toward zero, vortex disappears
-The sweet spot — if it exists at this smoke scale — is somewhere in between, and neither 0.7 nor 0.75 fully gets there
-
-The core tension: D and t_vortex are being controlled by the same knob (θ) in opposite directions right now. This is a signal that you need a second degree of freedom to decouple them. tau_exo (the timescale of the exogenous burst) is the natural candidate — it governs how quickly the burst decays, which affects timing without necessarily killing depth the way θ does.
-
-Kept a_exo=3.
-
-Searched tau_exo (originally 30). 
-
+```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set task.a_exo=3 \
     --sweep task.threshold=0.7,0.72,0.75,0.78 \
     --sweep task.tau_exo=10,20,30 \
     --no-plots --top 6
+```
 
-What this sweep really tells you: the D≈0 problem at θ=0.75 isn't something τ_exo can rescue. The burst decays at the right timescale but the threshold is still killing the vortex depth. This is a structural tension in the current architecture — the next lever to try is sigma_noise, which governs trial-to-trial variability and directly produces D in the tachometric curve (more noise → deeper apparent dip via trial averaging). That's a Phase 3 knob per the OPT_README, but you may need to peek at it earlier given the D problem is showing up so persistently.
+τ_exo=10 catastrophic — kills frac_crossed to 0.00 on m0 for nearly all θ. τ_exo=20 marginal. τ_exo=30 (library default) clearly correct. The D vs t_vortex anti-correlation is structural and not fixable with τ_exo — the θ tradeoff is the same regardless of burst timescale. τ_exo locked at 30. Winner is again θ=0.75/τ_exo=30 (score 0.297, same as sweep 3). D=0 at θ=0.75 flagged for investigation.
 
-Alternatively, before going there — are you confident the D extraction is correct? With frac_crossed ≈ 0.50 everywhere, the curve near the vortex is computed from very thin trial counts and the dip can genuinely vanish as a measurement artifact rather than a model failure.
+---
 
-Evaluated that. Gpt 5.4mini, home repo.
-Claude response (first optimization conversation, Web):
+### D=0 diagnosis — vortex is real, Gaussian fit is failing
 
-This reframes where you are. The problem isn't θ vs τ_exo — it's that the exogenous capture mechanism isn't strong enough to pull proportion-correct below chance at early rPTs, which is the biological signature of the vortex.
+Code inspection confirmed: model D is the Gaussian vortex amplitude from a parametric fit to the binned tachometric curve, not the raw minimum dip. The extractor defines D as 0.5 minus the soft minimum in the vortex region, but if the dip is too narrow or the bins are sparse, `curve_fit` fails to estimate covariance and returns D≈0 even when `vortex_depth` (the raw minimum) is genuinely below chance.
 
-what governs whether that below-chance dip forms at all?
+In sweep 4 results, D_m0≈0 while vortex_depth_m0 is negative — confirming the empirical binned curve is crossing below chance but the Gaussian fit cannot recover D from it. This is a measurement artifact at smoke resolution, not an absent mechanism.
 
-The three levers that directly control whether the curve crosses below chance:
+---
 
-a_exo — amplitude of the exogenous burst. This is your primary suspect. You fixed it at 3 across sweeps 3 and 4 after seeing a_exo=5 hurt in sweep 3, but that finding was confounded: sweep 3 was still using wrong targets, and the a_exo=5 runs may have been penalized for other reasons (A distortion, frac_crossed effects). With correct targets and τ_exo now confirmed at 30, a_exo deserves a fresh isolated look.
+### Sweep 5 — epoch count, vortex emergence check
 
-sigma_noise — trial-to-trial noise. More noise widens the distribution of outcomes at each rPT, which deepens the apparent dip in the averaged curve. This is Phase 3 normally but you're effectively already there given D=0 is your blocker.
-
-commit_temp — softness of the commitment decision. A very sharp commitment (low temp) means once the accumulator tips toward the exogenous direction it fully commits, which can deepen the vortex. Worth knowing the current default.
-
-Your current defaults are commit_temp = 0.2 and sigma_noise = 0.1, defined in task_params.py:57 and task_params.py:61.
-
-
-One thing to verify in code before running: confirm that a_exo scales the burst subtractively at the accumulator (i.e. it pushes the decision variable toward the wrong response, not just adds noise). If it's implemented as an additive perturbation in the wrong direction it should work; if it's something else, the mechanism may not be capable of producing below-chance performance regardless of magnitude.
-
-Gpt-5.4mini
-
-It is not implemented as a subtractive accumulator term. In trial_generator.py:63, a_exo multiplies an exponential burst, that burst is added to a sustained cue drive, and the result is written into either the left or right cue input channel after cue onset. That means the model gets an extra positive side-specific input, not a built-in negative push toward the wrong choice.
-
-The decision variable itself is formed later in lrrnn.py:43 from learned recurrent and input weights, and the readout in readout.py:1 is linear. So the only way a_exo can produce below-chance performance is indirectly, through the learned weights turning that side-specific burst into a bias toward the reflexive/wrong response. There is no code-level guarantee that the burst is “wrong-direction” in the accumulator; that behavior has to emerge from training.
-
-Claude:
-
-The vortex cannot exist at initialization — it has to be learned. The burst is a positive side-specific input, and whether that drives the accumulator toward the wrong response depends entirely on what the recurrent weights learn to do with it. At 50 smoke epochs with a fresh random init, the weights almost certainly haven't learned to invert the burst into a wrong-direction bias yet. So D≈0 and vortex_depth≥0 may not mean the mechanism is broken — it may just mean the model hasn't trained long enough to discover that the burst should produce capture errors.
-
-This reframes the Phase 0 problem entirely. You've been interpreting D=0 as a dynamic-range / architectural failure, but it's more likely a training horizon problem. The plumbing is correct; the weights just need more epochs to learn the inversion.
-
-ran:
-
+```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set task.threshold=0.75 \
-    --set task.tau_exo=30 \
     --set task.a_exo=3 \
+    --set task.tau_exo=30 \
     --sweep train.epochs=50,150,300,500 \
     --no-plots --top 4
+```
 
-goal- Watch for when vortex_depth_m0 first goes negative. If it crosses below chance somewhere between 150–500 epochs, you have your answer: the smoke epoch budget was the bottleneck, not the parameters. If it's still ≥0 at 500 epochs, then the weight learning genuinely isn't discovering the capture mechanism and you need to look at the loss landscape — specifically whether the behavioral loss has any gradient signal pointing toward wrong-direction responses at short rPT, or whether the loss is blind to the vortex until A and t_rise are already fit.
+Critical finding: vortex_depth < 0 at all four epoch counts — the curve crosses below chance from the very start. The vortex mechanism is working. D≈0 at 50 and 500 epochs is purely a Gaussian fit failure on a real but shallow/narrow dip. Best genuine fit at 300 epochs (D=0.143, t_rise≈159ms). 500 epochs shows t_vortex drifting to 70ms — possible instability past an optimum. Smoke epoch budget upgraded from 50 → 300.
 
-One other thing worth checking in the loss function: is D explicitly in the behavioral loss, or is it only implicit through the tachometric curve shape? If the loss only penalizes A and t_rise directly and treats D as emergent, the gradient toward vortex formation may be very weak early in training.
+Also confirmed: a_exo is implemented as a positive side-specific input (not subtractive). The below-chance dip must emerge from learned recurrent weights inverting the burst into a wrong-direction bias — it cannot be guaranteed architecturally and must be learned. This means D cannot appear at initialization; it requires sufficient training.
 
-Results:
-Claude:
+---
 
-The big news: the vortex IS there at all epoch counts. Every single run has vortex_depth < 0 — the curve is genuinely crossing below chance. The D≈0 problem you've been chasing was purely a Gaussian fit failure on a real-but-shallow dip, not an absent mechanism. The architecture is working.
+### Sweep 6 — θ × a_exo at 300 epochs (honest ranking)
 
-The score being non-monotone in epochs is the key diagnostic. 50 wins on score but for the wrong reason (shallow dip → D=0 → low D penalty + good t_vortex by accident). 300 is the genuine best. This means the smoke epoch budget of 50 has been giving you misleading rankings throughout sweeps 1–4 — configs that scored well may have just been accidentally producing narrow unfittable dips.
-
-Recommended next step — re-run your best θ/a_exo configs at 300 epochs to get honest rankings:
-
+```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set train.epochs=300 \
     --set task.tau_exo=30 \
     --sweep task.threshold=0.7,0.72,0.75,0.78 \
     --sweep task.a_exo=3,5,8 \
     --no-plots --top 6
+```
 
+θ=0.75, a_exo=3 holds as winner (score 0.531). t_vortex has converged to ~115–118ms across nearly all viable configs — the timing is no longer a free variable, τ_exo=30 is the dominant controller. a_exo=8 eliminated — kills frac_crossed at θ=0.72 and 0.78. θ=0.78 consistently problematic. θ=0.7/a_exo=5 is a competitive second (t_rise=152ms nearly perfect, D=0.167). Remaining variance is in A (undertrained, ~0.78–0.80) and D (real but shallow). Phase 1 gate reached.
 
-Res:
-θ=0.75, a_exo=3 holds as winner — and now it's a trustworthy ranking. These are honest 300-epoch scores, not 50-epoch artifacts.
+---
 
-The most important pattern in this sweep: t_vortex has essentially converged to ~115–118ms across every viable config. It's no longer a free variable — the model is finding the same vortex timing regardless of θ or a_exo. That's actually good news architecturally; it means the exogenous burst timescale (τ_exo=30) is the dominant controller of when the dip occurs, and that part is working. The ~10ms gap from target (105ms) is small and likely closeable with τ_exo fine-tuning later.
+### Sweep 7 — LR search, Phase 1
 
-The two remaining problems are A and D, and they're linked. A is sitting around 0.78–0.81 across the board (target 0.92) — the model isn't reaching high enough asymptotic accuracy. D is 0.13–0.17 at best (target 0.28) — the vortex depth is real but shallow. Both of these are undertrained symptoms, not wrong-parameter symptoms. The model knows where to put the vortex and roughly when to rise, but hasn't fully learned the magnitude of either.
-
-a_exo=5 at θ=0.7 is interesting second-place result: t_rise=152ms (nearly perfect), t_vortex=118ms, D=0.167 — a genuinely competitive config that might overtake the winner with more epochs.
-
-The Phase 1 gate is now in reach. You have a stable, non-degenerate training config (θ=0.75, a_exo=3, τ_exo=30)
-
-Recap:
-The model knows 
-1) where to put the vortex (D)
-2) when to put the vortex (t_vortex)
-3) and roughly how much to rise (A)
-   
-but it hasn't fully learned the magnitude of vortex or extent of accuracy rise (D,A), and t_vortex is a little off.
-
-Now:
-So Learning Rate search: push A and D toward their correct maxima, minima, but don't push out of convergence basin you have discovered.
-
-Later:
-τ_exo fine-tuning for t_vortex
-
+```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set task.threshold=0.75 \
     --set task.a_exo=3 \
@@ -242,15 +165,15 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set train.epochs=300 \
     --sweep train.lr=1e-4,3e-4,1e-3,3e-3 \
     --no-plots --top 4
+```
 
+LR=1e-3 wins on score (0.531). LR=3e-3 produces best A (0.835) and best D (0.362) but overshoots t_rise (134ms). LR≤3e-4 catastrophically dead — frac_crossed=0.00, loss artificially low. LR=3e-4 achieved the lowest training loss while producing a completely degenerate curve — textbook false minimum, confirms OPT_README §6. Sweet spot is between 1e-3 and 3e-3.
 
-Res:
-You need to go higher, not lower.
+---
 
-1e-3 wins on score (your current default, so no change needed there), but look at what 3e-3 is producing: A=0.835 (best in the sweep), D=0.362 (only config to overshoot the target, meaning it's genuinely fitting the vortex depth), and t_vortex=110ms (closest to 105 yet). It scores slightly worse only because t_rise undershoots to 134ms. That's a timing calibration issue, not a capacity issue — 3e-3 is learning more, just slightly fast on the rise.
+### Sweep 8 — fine LR search
 
-The sweet spot is between 1e-3 and 3e-3. 3e-3 has better A and D but overshoots t_rise; 1e-3 has better t_rise but weaker A and D. Run a fine search in that gap:
-
+```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set task.threshold=0.75 \
     --set task.a_exo=3 \
@@ -258,25 +181,15 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set train.epochs=300 \
     --sweep train.lr=1e-3,1.5e-3,2e-3,3e-3 \
     --no-plots --top 4
+```
 
-If 2e-3 lands with A>0.85, D>0.20, and t_rise closer to 155ms, that's your Phase 1 locked LR. Then one more check: -- grad_clip — 3e-3's higher loss suggests some gradient noise that clipping might stabilize, which could let you run at the higher LR more cleanly.
+No clean optimum in the gap. LR=2e-3 scores third despite sitting between the two better configs — t_rise blows to 229ms, worse than either neighbor. Different LRs landing in different basins rather than smoothly interpolating. LR=1e-3 locked as Phase 1 conservative choice (best score, most stable). D m1 weak across all configs — flagged as systemic. Note: LR tuning is model-size dependent; re-confirm after any n_hidden change.
 
-Res:
-LR landscape is non-monotone and the gap between 1e-3 and 3e-3 doesn't contain a clean optimum. That's unusual and suggests training is landing in different basins at different LRs rather than smoothly interpolating.
+---
 
-The real story from sweeps 7+8 combined: 1e-3 and 3e-3 are both legitimate but solving different parts of the problem:
+### Sweep 9 — epoch scale-up at locked config
 
-1e-3: good t_rise (159ms), weak A (0.799), weak D (0.143)
-3e-3: good A (0.835), good D (0.362), bad t_rise (134ms) and bad D m1 (0.069)
-
-Neither is strictly better. They're on different tradeoff curves. The issue isn't LR alone — it's that D m1 is consistently low or nan across everything. The adult maturation state (m=1) is lagging badly on vortex depth in almost every sweep. That asymmetry between m0 and m1 on D is worth noting as a systemic issue before proceeding.
-
-SYSTEMIC ISSUE: systematic asymmetry between m=0 and m=1 fit (revealing bi-objective tug-of-war)
-
-Phase 1 call: LR is sufficiently explored. The basin structure isn't going to get cleaner with more fine-grained LR search — you've found that 1e-3 and 3e-3 are your two viable operating points with different tradeoffs. Lock 1e-3 as the conservative choice (better score, more stable) and move to Phase 2 capacity.
-
-Per OPT_README §8 scale-up, the next step is extending epochs before touching n_hidden:
-
+```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set task.threshold=0.75 \
     --set task.a_exo=3 \
@@ -284,18 +197,15 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set train.lr=1e-3 \
     --sweep train.epochs=300,500,750,1000 \
     --no-plots --top 4
+```
 
-The question is whether more epochs at the locked LR can push A toward 0.92 and D toward 0.28 simultaneously, or whether the model has hit a capacity ceiling at n_hidden=64 that more training time can't fix. If A plateaus below 0.87 regardless of epoch count, that's your signal to raise n_hidden.
+A m0 stuck between 0.769–0.799 across all epoch counts — no upward trend. Capacity ceiling at n_hidden=64 confirmed: training longer cannot push A toward 0.92. 500 epoch basin instability noted (t_vortex crashes to 70ms, same as sweep 5) — warmup schedule ending may be hitting a saddle point. D m1 degrades with more epochs, consistent with a capacity-constrained model trading off adult state quality to seek young state gains. Phase 2 signal: raise n_hidden.
 
-Res: 
-Capacity ceiling confirmed. A m0 wanders between 0.769 and 0.799 across 300→1000 epochs with no upward trend — training longer isn't moving the needle. The model at n_hidden=64 simply doesn't have enough representational room to push A toward 0.92. This is the Phase 2 signal the OPT_README was waiting for.
+---
 
-Possible concern at 500 eps:500 epochs is a bad basin — t_vortex crashes to 70ms and D collapses to ~0, same pathology seen in sweep 5. There's something unstable happening around the 500-epoch mark specifically at this LR. Could be the warmup schedule ending and the optimizer hitting a saddle point. Worth keeping in mind but not worth chasing now.
+### Sweep 10 — n_hidden capacity sweep
 
-D m1 is also telling a story. It's highest at 300 epochs (0.322) and deteriorates with more training — the adult vortex gets worse as epochs increase. Model has reached capacity at n_hidden=64, and can't jointly maintain both m=0, m=1 states and starts lowering m1 representation quality in order to seek m0 gains.
-
-Time to raise n_hidden. Per OPT_README §8, go from 64 toward 200 in steps:
-
+```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set task.threshold=0.75 \
     --set task.a_exo=3 \
@@ -304,18 +214,19 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set train.epochs=300 \
     --sweep model.n_hidden=64,100,128,200 \
     --no-plots --top 4
+```
 
-Res:
-Every larger model fell into the dead-race false minimum. This is the same pathology as LR=3e-4 in sweep 7 — frac_crossed=0.00, loss artificially low, curve completely degenerate. n_hidden=128 additionally diverged (loss=11, A=0.5, D=0.6 are all hallmarks of a collapsed readout, not a real fit).
+All n_hidden > 64 fell into the dead-race false minimum (frac_crossed=0.00) at LR=1e-3. n_hidden=128 additionally diverged (loss=11, A=0.5, D=0.6 — collapsed readout). Root cause: LR=1e-3 was tuned for n_hidden=64. Larger models have more parameters and different loss landscape curvature; the same LR is too small relative to gradient scale and the optimizer slides into the dead-race basin before the race is established.
 
-The diagnosis is straightforward: LR=1e-3 was tuned for n_hidden=64. Larger models have more parameters and a different loss landscape curvature — the same LR is effectively too small relative to the gradient scale, and the optimizer slides into the dead-race basin before the race even gets established. This is exactly the OPT_README §8 warning: "Re-confirm the LR from Phase 1 still trains stably after raising n_hidden — usually yes; nudge down if not." In your case you need to nudge up, not down.
+**Key principle:** model size increases may require LR adjustment in either direction — decreases if greater capacity causes instability, increases if greater capacity does not outweigh the now-larger initialization inertia. Always re-confirm LR after any n_hidden change.
 
-NOTE FOR FUTURE: MODEL SIZE INCREASES MAY REQUIRE LEARNING RATE DECREASES (IF GREATER COST SIZE CAUSES INSTABILITY) OR INCREASES (IF GREATER COST SIZE DOES NOT OUTWEIGH THE NOW-LARGER PRIOR INIT INERTIA).
+Proceeded conservatively: re-run LR search at n_hidden=100 (smallest increment) before jumping to 128.
 
-Next sweep — re-run Phase 1 LR check at n_hidden=100:
+---
 
-Search UP from 1e-3 x5:
+### Sweep 11 — LR re-search at n_hidden=100
 
+```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set task.threshold=0.75 \
     --set task.a_exo=3 \
@@ -324,45 +235,33 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set model.n_hidden=100 \
     --sweep train.lr=1e-3,2e-3,3e-3,5e-3 \
     --no-plots --top 4
+```
 
-Goal:
-Then find the lowest LR that keeps frac_crossed alive, and if 100 shows a genuine A improvement over 64 you step to 128, then 200. One size at a time.
+Viable LR threshold is between 2e-3 and 3e-3. LR=3e-3 and LR=5e-3 both achieve frac_crossed=1.00 and converge to identical results (score=0.132, A=0.850, t_rise=161ms, t_vortex=108ms, D=0.450) — confirmed different seeds, genuine shared attractor. LR=3e-3 locked as minimum viable LR for n_hidden=100 (conservative choice, no benefit to going higher). Score 0.132 vs 0.531 at n_hidden=64 — genuine capacity improvement. A jumped from 0.799 to 0.850, t_vortex hit 108ms (nearly on target). D=0.450 with vortex_depth=nan flagged as likely Gaussian fit artifact at 300 epochs rather than true value.
 
-The big headline: score=0.132 at n_hidden=100 vs 0.531 at n_hidden=64. That's a genuine capacity improvement — A jumped from 0.799 to 0.850, t_vortex hit 108ms (nearly on target), and t_rise=161ms is solid. The capacity ceiling was real and raising n_hidden broke through it.
+LR=2e-3 curiosity: frac_crossed=0.00 but A=0.932 — model learned a high asymptote without the race ever crossing threshold. Classic false minimum with well-trained readout but broken decision mechanism.
 
-Pasted:
-Log outputted loss. Thrash at both best.
+---
 
-ClaudE:
-The loss is not descending — it's thrashing. Look at 3e-3:
+### Sweep 12 — grad_clip sweep (ruled out)
 
-Epoch 0: 5.32 → epoch 40: 5.12 (brief improvement)
-Epoch 50: 8.73 → epoch 70: 9.07 → epoch 90: 5.21 → epoch 110: 9.20
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 \
+    --set task.a_exo=3 \
+    --set task.tau_exo=30 \
+    --set model.n_hidden=100 \
+    --set train.lr=3e-3 \
+    --set train.epochs=300 \
+    --sweep train.grad_clip=0.5,1.0,2.0,5.0 \
+    --no-plots --top 4
+```
 
-It's bouncing between ~3.6 and ~9.2 with no downward trend. crossed=1.00 from epoch 30 onward, so the race is alive — but the optimizer is just pinballing around the loss surface without actually descending. Same story at 5e-3, just noisier (hitting 11.08 at epoch 70).
+grad_clip=1.0 produced identical loss values to the unclipped sweep 11 run — library default is already 1.0, sweeping it changed nothing. Spikes persist (loss oscillating 3.5–9.2) across all clip values while crossed=1.00 throughout. Gradient explosion ruled out: a true explosion would destabilize crossed, but it stays locked. grad_clip=5.0 was actually the cleanest curve, suggesting the current default clip is already slightly too tight.
 
-This is a grad_clip problem, not an LR problem. The loss spikes (8–9) followed by recovery are the classic signature of occasional large gradient steps that kick the weights out of a good region, followed by drift back. The reg term is essentially zero (0.00001) so there's no damping. At LR=1e-3 this wasn't visible because the steps were small enough that even unclipped gradients couldn't do much damage — but at 3e-3 the same gradient magnitudes produce 3× larger weight updates and the spikes become catastrophic.
+Root cause of spikes: the behavioral summary-statistic loss is computed from a stochastic Monte Carlo tachometric curve. Different random trial batches give different curve estimates, so the loss has inherent epoch-to-epoch variance. This is not a gradient problem — it is loss noise from the objective itself. batch_size confirmed at library default of 256 — already large enough that further increases would not materially help.
 
-The fix is grad_clip, not a lower LR. You want to keep the LR high enough to escape the dead-race basin but clip the occasional large gradient before it destabilizes training:
-
-Res:
-grad_clip is not the issue. Look at the logs carefully:
-
-grad_clip=1.0 is identical to the unclipped run from sweep 11. Exact same loss values at every epoch (5.44374 at epoch 10, 5.74309 at epoch 20, 6.22031 at epoch 30...). That means the current default grad_clip is already 1.0 or lower — you're not actually changing anything by sweeping it. The clip is already active and the spikes are happening anyway.
-
-The spikes are not gradient explosion. They're something else entirely. Notice: every run hits crossed=1.00 by epoch 30 and stays there permanently, yet the loss keeps spiking to 8–9 throughout. A gradient explosion would also destabilize crossed — but it stays at 1.00. The race is fine; the loss surface itself is just highly non-convex and the optimizer is hopping between local configurations that have very different loss values but similar behavioral outputs.
-
-Also notable: grad_clip=5.0 is actually the best training curve here — loss trends downward more cleanly (3.52 at epoch 90, 4.36 at epoch 80) before the late spikes. That's the opposite of what you'd expect if clipping were helping — it suggests the current clip is already too tight and is actually preventing useful large steps early on.
-
-What you're really seeing is that the loss landscape for this behavioral objective is inherently spiky. The summary-statistic loss (A, t_rise, t_vortex, D) is computed from a stochastic Monte Carlo tachometric curve — different random trial batches give different curve estimates, so the loss itself has high variance between epochs. You're not fighting gradient instability; you're fighting loss noise.
-
-The two levers for this are:
-
-batch_size — more trials per batch means smoother loss estimates. The smoke default is 64; doubling to 128 or 256 directly reduces the Monte Carlo variance in the loss signal.
-
-eval.trials_per_gap — but that's evaluation only, not training noise.
-
-Check what train.batch_size currently is, then try:
+**Diagnosis: at the practical limit of smoke resolution.** The shortened timeline (t_post=250 vs full 500) truncates the gradient on A and t_rise. The coarse bins (rpt_step=30 vs full 10) give ~6 bins across the rPT range instead of ~18, making t_vortex and D estimates unreliable. The optimizer is working with a blurry objective. The loss landscape degeneracy (two different LRs, different loss trajectories, identical behavioral outputs) is a direct consequence of low resolution blurring the loss surface. Next step is restoring full timeline and bin resolution before any further hyperparameter search.
 
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set task.threshold=0.75 \
@@ -371,31 +270,77 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set model.n_hidden=100 \
     --set train.lr=3e-3 \
     --set train.epochs=300 \
-    --sweep train.batch_size=64,128,256,512 \
+    --set task.t_pre=100 \
+    --set task.t_post=500 \
+    --set task.rpt_step=10 \
+    --no-plots 
+
+Run 13 — Dead race. Same false minimum as sweep 10's n_hidden=128 divergence.
+The culprit is the resolution change, not the model. When you restored t_post=500 and rpt_step=10, the loss landscape shifted under the same LR=3e-3. The longer timeline means more Euler steps per trial, which changes gradient scale. The finer bins (18 vs ~6) mean the behavioral objective is more sensitive — small deviations now matter more, making the penalty basin deeper and wider relative to the learning signal at epoch 0.
+
+This is the same phenomenon as sweep 10 (LR tuned for n_hidden=64 failed at n_hidden=100): the locked LR doesn't transfer across resolution changes.
+
+LR re-search at full resolution
+
+Same principle as sweep 11, but now at n_hidden=100 + full timeline. The dead-race false minimum at LR=3e-3 means we need to push LR higher to escape initialization inertia at the new resolution. In sweep 11 the viable threshold was between 2e-3 and 3e-3 at smoke resolution — expect it to shift upward here.
+
+Sweep 14 — Partial escape at LR=1.2e-2, but still not clean.
+
+What happened: LR=1.2e-2 is the only config that broke out of the dead-race lock — crossed recovered to ~0.5 around epoch 190–210, then wandered between 0.25–0.60 for the rest of training. Loss dropped from 11.047 to ~7.6–8.1 in that window. But the metrics tell a sobering story: m0 and m1 are still identical (t_rise, A, t_vortex, D all the same for both states), and frac_crossed_m0=0.00 while frac_crossed_m1=0.60. The model is crossing on m1 but not m0 — the race is alive for one maturation state and dead for the other.
+
+The three lower LRs (3e-3, 5e-3, 8e-3) all locked at the false minimum from epoch 10 onward. The viable LR threshold at full resolution is somewhere above 8e-3.
+
+Key observations:
+
+The race escapes around epoch 180–190 at LR=1.2e-2, not during warmup. This suggests the warmup schedule isn't helping establish the race early enough at full resolution — the model drifts into the dead basin first, then eventually escapes via noise at high LR.
+m0 never crossing (frac_crossed_m0=0.00) while m1 crosses (0.60) is a new asymmetry. The young state (m=0) is harder to train than the adult state — possibly because the young tachometric curve shape (larger D, shallower A at 0.92) is harder to achieve with the current initialization.
+The 7.59 loss at epoch 299 vs 8.10 in the middle suggests the curve hasn't stabilized — it's still moving at termination.
+
+The loss is still noisy and the race is asymmetric. We need to push LR higher to see if we can get both states crossing reliably, and run longer to see if the instability resolves.
+
+Why 500 epochs: at LR=1.2e-2 the race didn't escape until epoch ~190, meaning only ~110 epochs of actual learning happened before termination. We need to see whether crossed stabilizes and loss trends down after the escape, or whether it keeps wandering. 500 gives ~300 post-escape epochs to evaluate.
+
+Why push LR higher: LRs 5e-3 and 8e-3 never escaped at all. 1.2e-2 escaped late and asymmetrically. The pattern from sweeps 7–8 and 11 suggests the viable basin has a sharp lower edge — we may need to get comfortably above it to get clean symmetric crossing from early in training.
+
+What to watch in the log: the critical signal is whether crossed recovers during the warmup window (epochs 0–30ish) rather than at epoch 180. Early crossing means the LR is high enough to establish the race before the dead basin captures it. Also watch whether m0 and m1 cross together or whether the asymmetry persists.
+
+Success gate: at least one config with both frac_crossed_m0 ≥ 0.4 and frac_crossed_m1 ≥ 0.4, loss trending downward in the final 100 epochs, score meaningfully below 4.13.
+
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 \
+    --set task.a_exo=3 \
+    --set task.tau_exo=30 \
+    --set model.n_hidden=100 \
+    --set task.t_pre=100 \
+    --set task.t_post=500 \
+    --set task.rpt_step=10 \
+    --set train.epochs=500 \
+    --sweep train.lr=1.2e-2,1.5e-2,2e-2,3e-2 \
     --no-plots --top 4
 
-Res:
-default is 256. changes?
+The pattern is now clear and damning. LR=1.2e-2 is the only value that ever gets any crossing, and even then only for m1, never m0, and only transiently (frac_crossed_m0=0.00 the whole time). LRs from 1.5e-2 upward are more dead than 1.2e-2 — the reg column ticking up (0.00002 → 0.00003) as LR increases just means the optimizer is growing the weights while running in place in the dead basin. That's not a signal, it's noise.
 
-That changes things significantly. If batch_size is already 256 and the loss is still spiking to 8–9, then stochastic loss noise isn't the primary culprit either — 256 trials is enough that the Monte Carlo variance should be moderate.
+The LR window that actually works at full resolution is narrower than a single order of magnitude and sits around 1.2e-2 with unreliable, asymmetric crossing. There's no clean viable basin here. Chasing it further is diminishing returns.
 
-Go back to first principles. The spike pattern is:
+The diagnosis: n_hidden=100 at full resolution has a worse Phase 0 problem than n_hidden=64 did at smoke resolution. The longer timeline (more Euler steps) means the accumulator has more time to drift away from threshold before the learning signal can establish the race. The initialization that worked at smoke (crossed=0.11 at epoch 0, then warmup carries it) can't survive 500 timesteps of unguided integration.
 
-    crossed=1.00 locked in by epoch 30, never wavers
-    Loss oscillates between ~3.5 and ~9.2 with no trend
-    reg term is 0.00001 throughout — essentially zero, no regularization effect
-    Both 3e-3 and 5e-3 produce identical behavioral outputs despite very different loss trajectories
+Plan: Fall back to n_hidden=64, full resolution, fresh LR search
 
-That last point is the key one. Two runs with different LRs and different loss curves converge to the same A/t_rise/t_vortex/D. That means the loss variance isn't actually moving the weights to meaningfully different places — the model is stuck in a flat region of weight space where many different parameter configurations produce nearly identical behavioral outputs, and the optimizer is wandering within that flat region producing noisy loss readings without making behavioral progress.
+The logic: n_hidden=64 did train at full resolution in principle — we just never verified it because we jumped to n_hidden=100 (sweep 11) while still on smoke. The smoke score of 0.531 at n_hidden=64/LR=1e-3 is real. The question is whether that LR transfers to full resolution or needs adjustment, just as it did for n_hidden=100.
 
-This is a loss landscape degeneracy problem, not a stability problem. The behavioral summary-statistic loss simply doesn't have enough gradient information to uniquely specify the weights at this stage of training. The model has found a behavioral attractor (score=0.132, reasonable stats) and can't get out of it because the loss gradient in every direction away from it is weak or noisy.
+Sweep 16 — LR search at n_hidden=64, full resolution:
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 \
+    --set task.a_exo=3 \
+    --set task.tau_exo=30 \
+    --set model.n_hidden=64 \
+    --set train.epochs=300 \
+    --set task.t_pre=100 \
+    --set task.t_post=500 \
+    --set task.rpt_step=10 \
+    --sweep train.lr=1e-3,3e-3,5e-3,8e-3 \
+    --no-plots --top 4
 
-DIAGNOSIS: PRACTICAL LIMIT OF WHAT THE COARSE, LOW COMPUTE SMOKE RUN PRESET CAN TELL YOU ABOUT THE ACTUAL, FINE-GRAINED GRADIENT LANDSCAPE (it could be `blurring` things).
+    Success gate: at least one config with both frac_crossed_m0 ≥ 0.4 and frac_crossed_m1 ≥ 0.4, crossing established during warmup (not at epoch 180), and score below 2.0. If LR=1e-3 survives the resolution change, we accept it and move on. If it dies and something higher works, we lock the new LR and proceed to epoch scale-up at full resolution.
 
-The honest diagnosis: you may be at the practical limit of what the smoke preset can tell you. The shortened timeline, coarse rpt_step, and small eval trial count are all reducing the information content of the loss signal. Before sweeping more hyperparameters, the right move is probably the scale-up sequence from OPT_README §8 — specifically restoring the full timeline and measurement resolution, which sharpens the loss surface and gives the optimizer real gradient to follow. 
-
-The full preset values from OPT_README are t_pre=100, t_post=500, rpt_step=10 — so you're running at half the timeline and 3× coarser bins. That's a significantly degraded loss signal.
-
-The practical consequence: with t_post=250 the model never sees the full rise of the tachometric curve for slow responders, so the gradient on A and t_rise is truncated. With rpt_step=30 you have ~6 bins across the rPT range instead of ~18, so t_vortex and D are estimated from very coarse histograms. The optimizer is doing its best with a blurry objective function.
-
-Per OPT_README §8 step 2 and 3, lower rpt step and raise total t (pre and post).
+    If nothing crosses at full resolution even at n_hidden=64, that is a Phase 0 problem with the full timeline itself — at that point we'd look at init_rec_scale or warmup length before touching anything else.

@@ -31,6 +31,7 @@ class TrainConfig:
     lr: float = 1e-3
     grad_clip: float = 1.0
     warmup_epochs: int = 100
+    resume_checkpoint: str | None = None
     m_choices: tuple[float, ...] = (0.0, 1.0)
     log_every: int = 50
     plateau_patience: int = 50
@@ -67,6 +68,10 @@ def train(
     generator = torch.Generator().manual_seed(cfg.seed)
 
     model = LRRNN(model_params, task).to(cfg.device)
+    if cfg.resume_checkpoint is not None:
+        ckpt = torch.load(cfg.resume_checkpoint, map_location="cpu")
+        model.load_state_dict(ckpt["state_dict"])
+
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, factor=cfg.plateau_factor, patience=cfg.plateau_patience
