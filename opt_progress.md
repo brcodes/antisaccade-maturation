@@ -242,3 +242,90 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set train.epochs=300 \
     --sweep train.lr=1e-4,3e-4,1e-3,3e-3 \
     --no-plots --top 4
+
+
+Res:
+You need to go higher, not lower.
+
+1e-3 wins on score (your current default, so no change needed there), but look at what 3e-3 is producing: A=0.835 (best in the sweep), D=0.362 (only config to overshoot the target, meaning it's genuinely fitting the vortex depth), and t_vortex=110ms (closest to 105 yet). It scores slightly worse only because t_rise undershoots to 134ms. That's a timing calibration issue, not a capacity issue — 3e-3 is learning more, just slightly fast on the rise.
+
+The sweet spot is between 1e-3 and 3e-3. 3e-3 has better A and D but overshoots t_rise; 1e-3 has better t_rise but weaker A and D. Run a fine search in that gap:
+
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 \
+    --set task.a_exo=3 \
+    --set task.tau_exo=30 \
+    --set train.epochs=300 \
+    --sweep train.lr=1e-3,1.5e-3,2e-3,3e-3 \
+    --no-plots --top 4
+
+If 2e-3 lands with A>0.85, D>0.20, and t_rise closer to 155ms, that's your Phase 1 locked LR. Then one more check: -- grad_clip — 3e-3's higher loss suggests some gradient noise that clipping might stabilize, which could let you run at the higher LR more cleanly.
+
+Res:
+LR landscape is non-monotone and the gap between 1e-3 and 3e-3 doesn't contain a clean optimum. That's unusual and suggests training is landing in different basins at different LRs rather than smoothly interpolating.
+
+The real story from sweeps 7+8 combined: 1e-3 and 3e-3 are both legitimate but solving different parts of the problem:
+
+1e-3: good t_rise (159ms), weak A (0.799), weak D (0.143)
+3e-3: good A (0.835), good D (0.362), bad t_rise (134ms) and bad D m1 (0.069)
+
+Neither is strictly better. They're on different tradeoff curves. The issue isn't LR alone — it's that D m1 is consistently low or nan across everything. The adult maturation state (m=1) is lagging badly on vortex depth in almost every sweep. That asymmetry between m0 and m1 on D is worth noting as a systemic issue before proceeding.
+
+SYSTEMIC ISSUE: systematic asymmetry between m=0 and m=1 fit (revealing bi-objective tug-of-war)
+
+Phase 1 call: LR is sufficiently explored. The basin structure isn't going to get cleaner with more fine-grained LR search — you've found that 1e-3 and 3e-3 are your two viable operating points with different tradeoffs. Lock 1e-3 as the conservative choice (better score, more stable) and move to Phase 2 capacity.
+
+Per OPT_README §8 scale-up, the next step is extending epochs before touching n_hidden:
+
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 \
+    --set task.a_exo=3 \
+    --set task.tau_exo=30 \
+    --set train.lr=1e-3 \
+    --sweep train.epochs=300,500,750,1000 \
+    --no-plots --top 4
+
+The question is whether more epochs at the locked LR can push A toward 0.92 and D toward 0.28 simultaneously, or whether the model has hit a capacity ceiling at n_hidden=64 that more training time can't fix. If A plateaus below 0.87 regardless of epoch count, that's your signal to raise n_hidden.
+
+Res: 
+Capacity ceiling confirmed. A m0 wanders between 0.769 and 0.799 across 300→1000 epochs with no upward trend — training longer isn't moving the needle. The model at n_hidden=64 simply doesn't have enough representational room to push A toward 0.92. This is the Phase 2 signal the OPT_README was waiting for.
+
+Possible concern at 500 eps:500 epochs is a bad basin — t_vortex crashes to 70ms and D collapses to ~0, same pathology seen in sweep 5. There's something unstable happening around the 500-epoch mark specifically at this LR. Could be the warmup schedule ending and the optimizer hitting a saddle point. Worth keeping in mind but not worth chasing now.
+
+D m1 is also telling a story. It's highest at 300 epochs (0.322) and deteriorates with more training — the adult vortex gets worse as epochs increase. Model has reached capacity at n_hidden=64, and can't jointly maintain both m=0, m=1 states and starts lowering m1 representation quality in order to seek m0 gains.
+
+Time to raise n_hidden. Per OPT_README §8, go from 64 toward 200 in steps:
+
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 \
+    --set task.a_exo=3 \
+    --set task.tau_exo=30 \
+    --set train.lr=1e-3 \
+    --set train.epochs=300 \
+    --sweep model.n_hidden=64,100,128,200 \
+    --no-plots --top 4
+
+Res:
+Every larger model fell into the dead-race false minimum. This is the same pathology as LR=3e-4 in sweep 7 — frac_crossed=0.00, loss artificially low, curve completely degenerate. n_hidden=128 additionally diverged (loss=11, A=0.5, D=0.6 are all hallmarks of a collapsed readout, not a real fit).
+
+The diagnosis is straightforward: LR=1e-3 was tuned for n_hidden=64. Larger models have more parameters and a different loss landscape curvature — the same LR is effectively too small relative to the gradient scale, and the optimizer slides into the dead-race basin before the race even gets established. This is exactly the OPT_README §8 warning: "Re-confirm the LR from Phase 1 still trains stably after raising n_hidden — usually yes; nudge down if not." In your case you need to nudge up, not down.
+
+NOTE FOR FUTURE: MODEL SIZE INCREASES MAY REQUIRE LEARNING RATE DECREASES (IF GREATER COST SIZE CAUSES INSTABILITY) OR INCREASES (IF GREATER COST SIZE DOES NOT OUTWEIGH THE NOW-LARGER PRIOR INIT INERTIA).
+
+Next sweep — re-run Phase 1 LR check at n_hidden=100:
+
+Search UP from 1e-3 x5:
+
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 \
+    --set task.a_exo=3 \
+    --set task.tau_exo=30 \
+    --set train.epochs=300 \
+    --set model.n_hidden=100 \
+    --sweep train.lr=1e-3,2e-3,3e-3,5e-3 \
+    --no-plots --top 4
+
+Goal:
+Then find the lowest LR that keeps frac_crossed alive, and if 100 shows a genuine A improvement over 64 you step to 128, then 200. One size at a time.
+
+The big headline: score=0.132 at n_hidden=100 vs 0.531 at n_hidden=64. That's a genuine capacity improvement — A jumped from 0.799 to 0.850, t_vortex hit 108ms (nearly on target), and t_rise=161ms is solid. The capacity ceiling was real and raising n_hidden broke through it.
