@@ -1,0 +1,19 @@
+From the figure you have, you're missing:
+
+sigma_rise and sigma_vortex — these can't be read directly as values, only estimated visually as I did. The Goldstein et al. 2022 eLife paper (open access) explicitly fits parametric tachometric curves using this same formulation and reports sigma values for adult monkeys. That's your best source for those two parameters since Zhu et al. 2024 caption text doesn't mention them.
+
+Everything else worth looking for:
+
+From Zhu et al. 2024 specifically:
+
+Fig. 4 likely has individual monkey curves or the young/adult breakdown by subject — useful for knowing the variance around your targets, which informs how tightly to set your loss
+The SI(t, rPT) time courses from Figs. 6/7 — these are your neural prediction targets for the post-training analysis, not training targets, but you want the approximate scale and timing of the SI peak and zero-crossing for each maturation condition
+
+From Salinas et al. 2019:
+
+The exogenous burst parameters (A_exo, tau_exo) — this paper explicitly fits and reports these for the CAS model, and they directly inform how you construct the cue input to your RNN
+
+From Goldstein et al. 2022:
+
+sigma_rise, sigma_vortex for adult condition
+Threshold θ and noise σ estimates from their ART model fits — useful as initialization priors for your RNN's output threshold and noise parameters
