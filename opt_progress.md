@@ -329,3 +329,73 @@ Goal:
 Then find the lowest LR that keeps frac_crossed alive, and if 100 shows a genuine A improvement over 64 you step to 128, then 200. One size at a time.
 
 The big headline: score=0.132 at n_hidden=100 vs 0.531 at n_hidden=64. That's a genuine capacity improvement — A jumped from 0.799 to 0.850, t_vortex hit 108ms (nearly on target), and t_rise=161ms is solid. The capacity ceiling was real and raising n_hidden broke through it.
+
+Pasted:
+Log outputted loss. Thrash at both best.
+
+ClaudE:
+The loss is not descending — it's thrashing. Look at 3e-3:
+
+Epoch 0: 5.32 → epoch 40: 5.12 (brief improvement)
+Epoch 50: 8.73 → epoch 70: 9.07 → epoch 90: 5.21 → epoch 110: 9.20
+
+It's bouncing between ~3.6 and ~9.2 with no downward trend. crossed=1.00 from epoch 30 onward, so the race is alive — but the optimizer is just pinballing around the loss surface without actually descending. Same story at 5e-3, just noisier (hitting 11.08 at epoch 70).
+
+This is a grad_clip problem, not an LR problem. The loss spikes (8–9) followed by recovery are the classic signature of occasional large gradient steps that kick the weights out of a good region, followed by drift back. The reg term is essentially zero (0.00001) so there's no damping. At LR=1e-3 this wasn't visible because the steps were small enough that even unclipped gradients couldn't do much damage — but at 3e-3 the same gradient magnitudes produce 3× larger weight updates and the spikes become catastrophic.
+
+The fix is grad_clip, not a lower LR. You want to keep the LR high enough to escape the dead-race basin but clip the occasional large gradient before it destabilizes training:
+
+Res:
+grad_clip is not the issue. Look at the logs carefully:
+
+grad_clip=1.0 is identical to the unclipped run from sweep 11. Exact same loss values at every epoch (5.44374 at epoch 10, 5.74309 at epoch 20, 6.22031 at epoch 30...). That means the current default grad_clip is already 1.0 or lower — you're not actually changing anything by sweeping it. The clip is already active and the spikes are happening anyway.
+
+The spikes are not gradient explosion. They're something else entirely. Notice: every run hits crossed=1.00 by epoch 30 and stays there permanently, yet the loss keeps spiking to 8–9 throughout. A gradient explosion would also destabilize crossed — but it stays at 1.00. The race is fine; the loss surface itself is just highly non-convex and the optimizer is hopping between local configurations that have very different loss values but similar behavioral outputs.
+
+Also notable: grad_clip=5.0 is actually the best training curve here — loss trends downward more cleanly (3.52 at epoch 90, 4.36 at epoch 80) before the late spikes. That's the opposite of what you'd expect if clipping were helping — it suggests the current clip is already too tight and is actually preventing useful large steps early on.
+
+What you're really seeing is that the loss landscape for this behavioral objective is inherently spiky. The summary-statistic loss (A, t_rise, t_vortex, D) is computed from a stochastic Monte Carlo tachometric curve — different random trial batches give different curve estimates, so the loss itself has high variance between epochs. You're not fighting gradient instability; you're fighting loss noise.
+
+The two levers for this are:
+
+batch_size — more trials per batch means smoother loss estimates. The smoke default is 64; doubling to 128 or 256 directly reduces the Monte Carlo variance in the loss signal.
+
+eval.trials_per_gap — but that's evaluation only, not training noise.
+
+Check what train.batch_size currently is, then try:
+
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 \
+    --set task.a_exo=3 \
+    --set task.tau_exo=30 \
+    --set model.n_hidden=100 \
+    --set train.lr=3e-3 \
+    --set train.epochs=300 \
+    --sweep train.batch_size=64,128,256,512 \
+    --no-plots --top 4
+
+Res:
+default is 256. changes?
+
+That changes things significantly. If batch_size is already 256 and the loss is still spiking to 8–9, then stochastic loss noise isn't the primary culprit either — 256 trials is enough that the Monte Carlo variance should be moderate.
+
+Go back to first principles. The spike pattern is:
+
+    crossed=1.00 locked in by epoch 30, never wavers
+    Loss oscillates between ~3.5 and ~9.2 with no trend
+    reg term is 0.00001 throughout — essentially zero, no regularization effect
+    Both 3e-3 and 5e-3 produce identical behavioral outputs despite very different loss trajectories
+
+That last point is the key one. Two runs with different LRs and different loss curves converge to the same A/t_rise/t_vortex/D. That means the loss variance isn't actually moving the weights to meaningfully different places — the model is stuck in a flat region of weight space where many different parameter configurations produce nearly identical behavioral outputs, and the optimizer is wandering within that flat region producing noisy loss readings without making behavioral progress.
+
+This is a loss landscape degeneracy problem, not a stability problem. The behavioral summary-statistic loss simply doesn't have enough gradient information to uniquely specify the weights at this stage of training. The model has found a behavioral attractor (score=0.132, reasonable stats) and can't get out of it because the loss gradient in every direction away from it is weak or noisy.
+
+DIAGNOSIS: PRACTICAL LIMIT OF WHAT THE COARSE, LOW COMPUTE SMOKE RUN PRESET CAN TELL YOU ABOUT THE ACTUAL, FINE-GRAINED GRADIENT LANDSCAPE (it could be `blurring` things).
+
+The honest diagnosis: you may be at the practical limit of what the smoke preset can tell you. The shortened timeline, coarse rpt_step, and small eval trial count are all reducing the information content of the loss signal. Before sweeping more hyperparameters, the right move is probably the scale-up sequence from OPT_README §8 — specifically restoring the full timeline and measurement resolution, which sharpens the loss surface and gives the optimizer real gradient to follow. 
+
+The full preset values from OPT_README are t_pre=100, t_post=500, rpt_step=10 — so you're running at half the timeline and 3× coarser bins. That's a significantly degraded loss signal.
+
+The practical consequence: with t_post=250 the model never sees the full rise of the tachometric curve for slow responders, so the gradient on A and t_rise is truncated. With rpt_step=30 you have ~6 bins across the rPT range instead of ~18, so t_vortex and D are estimated from very coarse histograms. The optimizer is doing its best with a blurry objective function.
+
+Per OPT_README §8 step 2 and 3, lower rpt step and raise total t (pre and post).
