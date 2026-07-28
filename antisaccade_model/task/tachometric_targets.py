@@ -41,12 +41,13 @@ class TCParams:
                       # The curve is constructed to cross 0.75 at exactly this rPT.
     sigma_rise: float # ms, width of the recovery
     t_vortex: float   # ms, location of the vortex minimum
-    D: float          # vortex depth below chance
-    sigma_vortex: float  # ms, width of the vortex
+    D: float          # vortex depth below chance (0.5 - min accuracy)
+    sigma_vortex: float  # ms, width of the vortex 
 
 
 # Values from Zhu et al. (2024) Fig. 3: t_rise is the 75%-correct crossing
-# (young = 155 ms, adult = 140 ms). Claude looking at 3B, and or info from that Fig neighborhood.
+# (young = 155 ms, adult = 140 ms).
+# Others: Claude looking at 3B, and or info from that Fig neighborhood.
 YOUNG_PARAMS = TCParams(A=0.92, t_rise=155.0, sigma_rise=25.0,
                         t_vortex=105.0, D=0.28, sigma_vortex=25.0)
 ADULT_PARAMS = TCParams(A=0.97, t_rise=140.0, sigma_rise=15.0,
@@ -169,15 +170,14 @@ def extract_summary_stats(
 def target_summary_stats(m: float, task: TaskParams, **extractor_kwargs) -> dict:
     """Target summary statistics for a maturation state.
 
-    A, t_vortex, and D are read from the parametric curve with the same
-    extractor used on the model (consistent definitions). t_rise is set to the
-    exact empirical 75% crossing (``params.t_rise``) so the behavioral target is
-    anchored to the Zhu et al. (2024) rise points (young = 155 ms, adult = 140 ms)
-    and free of any sigmoid-midpoint / grid-quantization bias.
+    The authored tachometric parameters are the source of truth for the target
+    statistics. This keeps training and logging aligned with the values defined
+    above, instead of re-estimating target values from the discretized curve.
     """
-    grid = torch.tensor(task.rpt_grid, dtype=torch.float32)
     params = params_for_m(m)
-    tc = tachometric_curve(grid, params)
-    stats = extract_summary_stats(tc, grid, **extractor_kwargs)
-    stats["t_rise"] = torch.tensor(float(params.t_rise))
-    return {k: v.detach() for k, v in stats.items()}
+    return {
+        "A": torch.tensor(float(params.A)),
+        "t_rise": torch.tensor(float(params.t_rise)),
+        "t_vortex": torch.tensor(float(params.t_vortex)),
+        "D": torch.tensor(float(params.D)),
+    }
