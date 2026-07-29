@@ -5,10 +5,7 @@ Targets (ground truth, confirmed correct from sweep 2 onward):
 - adult: A=0.97, t_rise=140ms, t_vortex=106ms, D=0.27
 - score = weighted behavioral MSE + crossing penalty; lower is better; always read alongside frac_crossed
 
-**Architectural gaps (gameplan v2 delta — not yet implemented):**
-- Lapse mechanism: if no crossing by T_max=450ms, force argmax(z(T_max)). Required for A to differ between m=0/m1. Without it the model has no pathway for m to influence asymptotic performance — explains A ceiling ~0.85 seen throughout.
-- Stochastic initial state: `h(0) = h_mean(m) + σ_shared·ε_shared·1_N + σ_private·ε_private`, σ_shared≈0.3, σ_private≈0.1. Required for realistic rPT variance and vortex depth.
-- Both will shift the loss landscape; fresh LR search required after implementation.
+**Architectural status:** Both identified gaps are now implemented and validated (lapse mechanism via branch mixture λ(m), stochastic h0 via shared+private factorization). See architectural changes section (after sweep 18) for validation details and parameters. Loss landscape altered; LR/rpt_step re-search required in sweeps 19–20.
 
 **rpt_step note:** affects the training objective (soft-binning in losses.py), not just evaluation. Changing it changes what the model trains against.
 
@@ -51,6 +48,8 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --no-plots --top 6
 ```
 - τ_exo=10 kills frac_crossed; τ_exo=20 marginal; τ_exo=30 correct. D vs t_vortex tradeoff is structural, not fixable with τ_exo. τ_exo locked at 30 (= library default).
+
+**Measurement artifact diagnostic (sweep 4):** When D collapses to ~0 while vortex_depth is genuinely negative (e.g., sweep 3 at θ=0.75/a_exo=3), this is a Gaussian fit failure at smoke resolution. The empirical binned curve crosses below chance but bins are too sparse for `curve_fit` to recover amplitude. This artifact re-appears in later configs and should not be misinterpreted as mechanism failure.
 
 ---
 
@@ -227,21 +226,56 @@ STE hypothesis ruled out — non-monotone relationship between t_post and surviv
 
 ---
 
-**Current locked config:**
-`θ=0.75, a_exo=3, τ_exo=30, n_hidden=100, LR=3e-3, epochs=300, batch_size=256, t_post=250 (smoke default)`
+```bash
+# Architectural changes — code_v2_delta_edit_delta (implemented and validated post-sweep 18)
+```
 
-**Immediate next sweep (19):**
+Both architectural gaps identified as required before further fitting are now implemented:
+
+**Lapse mechanism** — branch mixture. Normal and lapse branches run in parallel; mixed with λ(m). Rule input channel zeroed on lapse branch (m-leakage test passed: max output diff across m on lapse branch = 0.0). λ_young=0.08, λ_adult=0.02, both learned via sigmoid-constrained logits. Lapse branch contributes gradient even when normal branch doesn't cross threshold — this is the primary reason t_post=500 may now be viable.
+
+**Stochastic initial state** — shared+private factorization. σ_shared=0.7, σ_private=0.05. Provides trial-to-trial RT variability and more realistic vortex depth.
+
+**Validation complete:** full forward pass with lapse+h0 active; all parameters receive gradients; lapse logits at correct initial values. Output correlation (0.230) and curve stability (50–80ms) at 50 epochs reflect untrained W_out geometry, not implementation errors.
+
+**Loss landscape impact:** both changes alter gradient flow. LR must be re-confirmed post-architecture.
+
+---
+
+**Current locked config (pre-architecture):**
+`θ=0.75, a_exo=3, τ_exo=30, n_hidden=64, LR=8e-3, epochs=300, batch_size=256, t_post=250`
+
+**Status:** Architecture (lapse mechanism + stochastic h0) now implemented and validated. Loss landscape altered — LR and rpt_step must be re-confirmed post-architecture.
+
+**Immediate next sweeps (19–21, all post-architecture):**
+
+**Sweep 19** — rpt_step viability at t_post=250/n_hidden=64:
 ```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
-    --set task.threshold=0.75 \
-    --set task.a_exo=3 \
-    --set task.tau_exo=30 \
-    --set model.n_hidden=100 \
-    --set train.lr=3e-3 \
-    --set train.epochs=300 \
-    --set task.t_pre=100 \
-    --set task.t_post=250 \
-    --sweep task.rpt_step=30,10 \
-    --no-plots --top 2
+    --set task.threshold=0.75 --set task.a_exo=3 --set task.tau_exo=30 \
+    --set model.n_hidden=64 --set train.lr=8e-3 --set train.epochs=300 \
+    --set task.t_pre=100 --set task.t_post=250 \
+    --sweep task.rpt_step=30,10 --no-plots --top 2
 ```
-Confirm rpt_step=10 doesn't break training at t_post=250. If stable, lock rpt_step=10 as new smoke baseline. Then implement lapse mechanism and stochastic initial state before further hyperparameter search.
+If rpt_step=10 stable → lock it. If not → keep rpt_step=30 for training. LR=8e-3 is baseline, will be re-confirmed in sweep 20.
+
+**Sweep 20** — LR re-search at n_hidden=64/t_post=250 with new architecture:
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 --set task.a_exo=3 --set task.tau_exo=30 \
+    --set model.n_hidden=64 --set train.epochs=300 \
+    --set task.t_pre=100 --set task.t_post=250 \
+    --set task.rpt_step=[from sweep 19] \
+    --sweep train.lr=1e-3,3e-3,5e-3,8e-3 --no-plots --top 4
+```
+Lapse + h0 both alter loss landscape. Pre-architecture used LR=1e-3 (smoke) or LR=8e-3 (t_post=500). Sweep full range; watch frac_crossed as health metric.
+
+**Sweep 21** — t_post=500 retest with new architecture:
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 --set task.a_exo=3 --set task.tau_exo=30 \
+    --set model.n_hidden=64 --set train.epochs=300 \
+    --set task.t_pre=100 --set task.rpt_step=[from sweep 19] \
+    --set train.lr=[from sweep 20] --set task.t_post=500 --no-plots
+```
+Lapse branch now provides gradient when normal branch doesn't cross — likely fixes t_post=500 non-learning. If stable and loss descends: t_post=500 viable. If not: investigate rPT distribution.

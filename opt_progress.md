@@ -13,29 +13,31 @@ Append one dated entry per accepted finding. Record the command, the key numbers
 | `task.threshold` | 0.75 | sweep 3 |
 | `task.a_exo` | 3.0 | sweep 3 |
 | `task.tau_exo` | 30.0 (confirmed = library default) | sweep 4 |
-| `train.lr` | 3e-3 | sweep 11 |
-| `model.n_hidden` | 100 | sweep 11 |
+| `model.n_hidden` | 64 | sweep 18 — n_hidden=100 abandoned at full resolution (sweeps 14–15) |
+| `train.lr` | unknown — re-search required post-architecture | sweep 18 note |
 | `train.epochs` | 300 | sweep 9 |
 | `train.batch_size` | 256 (library default) | confirmed |
-| `task.t_pre` | 50 (smoke default — see sweep 18 note) | pending |
-| `task.t_post` | 250 (smoke default — t_post=500 not viable yet) | sweep 18 |
-| `task.rpt_step` | 30 (smoke default — rpt_step=10 untested at t_post=250) | pending |
+| `task.t_pre` | 50 (smoke default) | low priority; see sweep 18 note |
+| `task.t_post` | 250 | sweep 18 |
+| `task.rpt_step` | 30 (smoke default) | rpt_step=10 untested at t_post=250 — sweep 19 |
 
-**Current phase:** t_post=250 confirmed as the viable training window. t_post=500 kills the race regardless of LR or two-stage approach. Architecture is missing lapse mechanism and stochastic initial state (gameplan v2 delta) — these are required before further behavioral fitting makes sense. rpt_step=10 at t_post=250 is the next cheap improvement to test (sweep 19).
+**Note on n_hidden:** The original config table listed n_hidden=100/LR=3e-3 from sweep 11, but sweep 11 was smoke-resolution only. Sweeps 14–15 showed n_hidden=100 is not viable at full resolution — no LR produces a functioning race at t_post=500. Sweep 16 explicitly fell back to n_hidden=64 and sweeps 17–18 continued there. The operative model is n_hidden=64. n_hidden=100 at smoke resolution remains a useful data point but is not the current baseline.
+
+**Note on LR:** At n_hidden=64/t_post=250 the LR was never directly tested post-sweep-18 (sweep 18 used LR=8e-3 specifically for the t_post isolation — it was chosen because it was the only survivor at t_post=500, not because it was optimal at t_post=250). LR must be re-searched at n_hidden=64/t_post=250 after architectural changes. At smoke resolution n_hidden=64 used LR=1e-3 (sweeps 7–9). At full resolution n_hidden=64 needed LR=8e-3 to hold the race at t_post=500. At t_post=250 with new architecture: unknown.
+
+**Current phase:** Architecture is now complete (lapse mechanism + stochastic initial state implemented and validated per code_v2_delta_edit_delta.md). Both were identified as required before further fitting. Loss landscape has shifted. Immediate next steps: sweep 19 (rpt_step=10 at t_post=250), then LR re-search at n_hidden=64/t_post=250 with new architecture, then t_post=500 retest.
 
 ---
 
 ## Next steps (specific, ordered)
 
-1. **Sweep 19** — confirm rpt_step=10 works at t_post=250. One axis, two values, no other changes. If stable, lock rpt_step=10 as the new smoke baseline.
+1. **Sweep 19** — confirm rpt_step=10 at t_post=250/n_hidden=64. One axis, two values. Use LR=8e-3 as the sweep 18 baseline (most recently validated at this resolution). If rpt_step=10 is stable (frac_crossed=1.00, score comparable): lock rpt_step=10. If not: keep rpt_step=30 for training, rpt_step=10 for eval only.
 
-2. **Implement lapse mechanism** (gameplan v2 §5): if no crossing by T_max=450ms, force response as argmax(z(T_max)). Small change to trial generation. Required for A to differ between m=0 and m=1 — without it the model cannot reproduce the asymptote difference the loss demands.
+2. **Sweep 20 — LR re-search at n_hidden=64/t_post=250 with new architecture** — lapse mechanism and stochastic h0 both change gradient flow and loss geometry. The viable LR at t_post=250 pre-architecture was 1e-3 (smoke, sweeps 7–8). At t_post=500/n_hidden=64, only 8e-3 survived. The t_post=250 window is structurally easier for the race — expect viable LR to sit somewhere between 1e-3 and 8e-3. Sweep lr=1e-3,3e-3,5e-3,8e-3 at n_hidden=64/t_post=250. Use rpt_step from sweep 19.
 
-3. **Implement stochastic initial state** (gameplan v2 §2): `h(0) = h_mean(m) + σ_shared·ε_shared·1_N + σ_private·ε_private`, σ_shared≈0.3, σ_private≈0.1. Required for realistic rPT variance and vortex depth.
+3. **Sweep 21 — t_post=500 retest at n_hidden=64 with new architecture** — the previous t_post=500 failures (sweeps 16–17) occurred without the lapse mechanism. The lapse branch now provides gradient even when the normal branch doesn't cross threshold, which is the structural change most likely to fix the non-learning problem. Test the winning LR from sweep 20 at t_post=500. If race establishes and loss descends: t_post=500 is viable. If not: the t_post failure is not architectural.
 
-4. After both architectural additions: re-run LR search at n_hidden=64 with updated architecture. The loss landscape will shift.
-
-5. t_post=500 is deferred — the optimizer cannot hold the race at that timeline with the current architecture. Revisit after lapse + stochastic init are in.
+4. **n_hidden re-evaluation** — n_hidden=100 was only tried at full resolution against t_post=500, which was already failing for architectural reasons unrelated to capacity. Once t_post=500 is viable (or confirmed permanently unviable), re-run n_hidden=100 at that resolution with the new architecture. A ceiling at n_hidden=64 may still exist for A — it was present at smoke resolution — and the lapse mechanism will not fix capacity limits.
 
 ---
 
@@ -208,7 +210,7 @@ All n_hidden > 64 fell into the dead-race false minimum (frac_crossed=0.00) at L
 
 ---
 
-### Sweep 11 — LR re-search at n_hidden=100
+### Sweep 11 — LR re-search at n_hidden=100 (smoke resolution only)
 
 ```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
@@ -221,9 +223,11 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --no-plots --top 4
 ```
 
-Viable LR threshold is between 2e-3 and 3e-3. LR=3e-3 and LR=5e-3 both achieve frac_crossed=1.00 and converge to identical results (score=0.132, A=0.850, t_rise=161ms, t_vortex=108ms, D=0.450) — confirmed different seeds, genuine shared attractor. LR=3e-3 locked as minimum viable LR for n_hidden=100. Score 0.132 vs 0.531 at n_hidden=64 — genuine capacity improvement. A jumped from 0.799 to 0.850, t_vortex hit 108ms (nearly on target). D=0.450 with vortex_depth=nan flagged as likely Gaussian fit artifact at 300 epochs.
+Viable LR threshold is between 2e-3 and 3e-3. LR=3e-3 and LR=5e-3 both achieve frac_crossed=1.00 and converge to identical results (score=0.132, A=0.850, t_rise=161ms, t_vortex=108ms, D=0.450) — confirmed different seeds, genuine shared attractor. LR=3e-3 locked as minimum viable for n_hidden=100 **at smoke resolution**. Score 0.132 vs 0.531 at n_hidden=64 — genuine capacity improvement. A jumped from 0.799 to 0.850, t_vortex hit 108ms (nearly on target). D=0.450 with vortex_depth=nan flagged as likely Gaussian fit artifact at 300 epochs.
 
-LR=2e-3 curiosity: frac_crossed=0.00 but A=0.932 — model learned a high asymptote without the race ever crossing threshold. Classic false minimum with well-trained readout but broken decision mechanism.
+LR=2e-3 curiosity: frac_crossed=0.00 but A=0.932 — model learned a high asymptote without the race ever crossing threshold. Classic false minimum.
+
+**Important:** n_hidden=100 result here is smoke-resolution only (t_post=250, rpt_step=30). Full-resolution viability tested and failed in sweeps 14–15. n_hidden=100 is not the current operative baseline.
 
 ---
 
@@ -249,7 +253,7 @@ Diagnosis: at the practical limit of smoke resolution. The shortened timeline (t
 
 ---
 
-### Run 13 — full resolution diagnostic (failed)
+### Run 13 — full resolution diagnostic (failed, n_hidden=100)
 
 ```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
@@ -265,11 +269,11 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --no-plots
 ```
 
-Dead race from epoch 10 onward. frac_crossed=0.00 for both m0 and m1, loss locked at 11.047 for 290 epochs. Score=4.13. The locked LR=3e-3 (tuned for n_hidden=100 at smoke resolution) does not transfer to full timeline — same phenomenon as sweep 10 (LR tuned for n_hidden=64 failed at n_hidden=100). Changing resolution shifts the loss landscape.
+Dead race from epoch 10 onward. frac_crossed=0.00 for both m0 and m1, loss locked at 11.047 for 290 epochs. Score=4.13. The locked LR=3e-3 (tuned for n_hidden=100 at smoke resolution) does not transfer to full timeline — same principle as sweep 10. Changing resolution shifts the loss landscape. LR re-search required at full resolution.
 
 ---
 
-### Sweep 14 — LR re-search at n_hidden=100, full resolution
+### Sweep 14 — LR re-search at n_hidden=100, full resolution (failed)
 
 ```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
@@ -289,7 +293,7 @@ LR=1.2e-2 is the only config that escapes the dead-race lock — crossed recover
 
 ---
 
-### Sweep 15 — higher LR range at n_hidden=100, full resolution (failed)
+### Sweep 15 — higher LR range at n_hidden=100, full resolution (failed, abandoned)
 
 ```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
@@ -305,7 +309,7 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --no-plots --top 4
 ```
 
-LR=1.5e-2 through 3e-2 all dead from epoch 10, never escape. LR=1.2e-2 repeats sweep 14 behavior. No viable config. Abandoned n_hidden=100 at full resolution.
+LR=1.5e-2 through 3e-2 all dead from epoch 10, never escape. LR=1.2e-2 repeats sweep 14 behavior — m1 only, never m0. No viable config found. **n_hidden=100 abandoned at full resolution. Fell back to n_hidden=64.**
 
 ---
 
@@ -398,20 +402,88 @@ Results by t_post:
 
 STE hypothesis ruled out — the relationship between t_post and survival is non-monotone. A true gradient accumulation problem would produce monotone degradation with t_post.
 
-**Key finding:** t_post=250 (smoke default) is the viable training window. t_post=500 is survivable but non-learning. t_post=150 and t_post=350 fall into false minima. The three-variable resolution change (t_pre, t_post, rpt_step) was a confound — the problem was always t_post specifically.
+**Key finding:** t_post=250 is the viable training window. t_post=500 is survivable but non-learning. t_post=150 and t_post=350 fall into false minima. The three-variable resolution change (t_pre, t_post, rpt_step) was a confound — the problem was always t_post specifically. t_post=250 at LR=8e-3/n_hidden=64 reproduces score=0.132 (same as smoke best at n_hidden=64). This is the operative baseline at end of this log.
 
-**t_pre note:** t_pre controls how long the accumulator runs before cue onset — it's the baseline attractor establishment period. Monkeys fixated ~1000ms; t_pre=50 vs t_pre=100 matters only if the RNN hasn't reached its pre-cue attractor within 50ms of simulation time. Likely fast convergence at n_hidden=64, so t_pre is low-priority. rpt_step affects the training objective (not just evaluation) — see sweep 12 note.
+**t_pre note:** t_pre controls how long the accumulator runs before cue onset. Monkeys fixated ~1000ms; t_pre=50 vs t_pre=100 matters only if the RNN hasn't reached its pre-cue attractor within 50ms. Likely fast convergence at n_hidden=64, so t_pre is low-priority.
+
+**rpt_step note (added after sweep 18):** rpt_step affects the training objective, not just evaluation. It defines task.rpt_grid used in losses.py for soft-binning. Changing rpt_step changes what the model trains against.
 
 ---
 
-### Architectural gaps identified (gameplan v2 delta)
+### Architectural changes — code_v2_delta_edit_delta (implemented and validated)
 
-Two mechanisms required by the corrected gameplan are not yet implemented. These change the loss landscape and should be added before further behavioral fitting:
+Both architectural gaps identified at end of sweep 18 are now implemented and validated:
 
-**1. Lapse mechanism** (gameplan v2 §5): if no crossing by T_max=450ms, force response as argmax(z(T_max)). Required for A to differ between m=0 and m=1 — without a deadline/lapse mechanism, the model has no architectural pathway for maturation state m to influence asymptotic performance. The A ceiling at ~0.85 seen across all sweeps is consistent with this gap.
+**Lapse mechanism** — branch mixture. Normal and lapse branches run in parallel; mixed with λ(m). Rule input channel zeroed on lapse branch. m-leakage test: max output diff across m on lapse branch = 0.0 (was 0.266 before fix). λ_young=0.08, λ_adult=0.02, both learned via sigmoid-constrained logits. Lapse branch contributes gradient even when normal branch doesn't cross threshold — primary reason t_post=500 may now be viable.
 
-**2. Stochastic initial state** (gameplan v2 §2): `h(0) = h_mean(m) + σ_shared·ε_shared·1_N + σ_private·ε_private`, σ_shared≈0.3, σ_private≈0.1. Required for realistic rPT variance and vortex depth D. Without it, vortex can only emerge from the deterministic exogenous burst, which is a weak source of variability.
+**Stochastic initial state** — shared+private factorization. σ_shared=0.7, σ_private=0.05 (set to contingency values after output correlation check). Provides trial-to-trial RT variability and more realistic vortex depth.
 
-Both additions will shift the loss landscape and require a fresh LR search after implementation.
+**Hard/soft curve separation** — confirmed correct. Soft mixed-branch curve drives per-step gradients; hard threshold-crossing curve used only for periodic summary-stat fitness. Separate code paths.
 
-**Next sweep before architectural changes:** Sweep 19 — confirm rpt_step=10 is viable at t_post=250. One axis, two values, no other changes.
+**Validation:** full forward pass with lapse+h0 active; all parameters receive gradients; lapse logits at correct initial values. Output correlation (0.230) and curve stability (50–80ms) at 50 epochs reflect untrained W_out geometry, not implementation errors — re-check after full training.
+
+**Loss landscape impact:** both changes alter gradient flow. LR=8e-3 (the last operative value at n_hidden=64/t_post=250) must be re-confirmed.
+
+---
+
+### Sweep 19 — rpt_step=10 viability at t_post=250/n_hidden=64 (pending)
+
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 \
+    --set task.a_exo=3 \
+    --set task.tau_exo=30 \
+    --set model.n_hidden=64 \
+    --set train.lr=8e-3 \
+    --set train.epochs=300 \
+    --set task.t_pre=100 \
+    --set task.t_post=250 \
+    --sweep task.rpt_step=30,10 \
+    --no-plots --top 2
+```
+
+**If stable:** lock rpt_step=10. **If not:** keep rpt_step=30 for training; rpt_step=10 for eval only. LR=8e-3 here is the last operative value — result is directionally useful but LR must be re-confirmed in sweep 20 regardless.
+
+---
+
+### Sweep 20 — LR re-search at n_hidden=64/t_post=250 with new architecture (pending)
+
+Run after sweep 19.
+
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 \
+    --set task.a_exo=3 \
+    --set task.tau_exo=30 \
+    --set model.n_hidden=64 \
+    --set train.epochs=300 \
+    --set task.t_pre=100 \
+    --set task.t_post=250 \
+    --set task.rpt_step=[from sweep 19] \
+    --sweep train.lr=1e-3,3e-3,5e-3,8e-3 \
+    --no-plots --top 4
+```
+
+Pre-architecture, t_post=250/n_hidden=64 used LR=1e-3 (smoke, sweeps 7–8) and LR=8e-3 (full resolution, sweep 18). The lapse branch and stochastic h0 both change the loss landscape. Sweep the full range. Watch frac_crossed as primary health metric. If all dead: try two-stage approach.
+
+---
+
+### Sweep 21 — t_post=500 retest at n_hidden=64 with new architecture (pending)
+
+Run after sweep 20 confirms a viable LR.
+
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 \
+    --set task.a_exo=3 \
+    --set task.tau_exo=30 \
+    --set model.n_hidden=64 \
+    --set train.epochs=300 \
+    --set task.t_pre=100 \
+    --set task.rpt_step=[from sweep 19] \
+    --set train.lr=[from sweep 20] \
+    --set task.t_post=500 \
+    --no-plots
+```
+
+The lapse branch provides gradient even when the normal branch doesn't cross threshold — this is the structural change most likely to fix the t_post=500 non-learning problem seen in sweeps 16–17. If race establishes and loss descends: t_post=500 is viable. If not: the t_post failure is not architectural — investigate whether the rPT distribution at t_post=500 overweights uninformative guessing-tail trials.
