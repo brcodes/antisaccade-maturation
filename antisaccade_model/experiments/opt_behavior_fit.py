@@ -61,6 +61,7 @@ from ..task.task_params import TaskParams
 from ..task.tachometric_targets import target_summary_stats
 from ..training.train import TrainConfig, train
 from ..visualization.plot_tc import plot_tachometric
+from ._logging import tee_run_output
 
 logger = logging.getLogger("opt_behavior_fit")
 
@@ -344,13 +345,14 @@ def run_sweep(args: argparse.Namespace, out_root: str) -> None:
         for key, raw in combo.items():
             apply_override(configs, key, raw)
         run_dir = os.path.join(out_root, f"run_{i:03d}")
-        logger.info("[%d/%d] %s", i + 1, len(combos), combo or "(base)")
+        with tee_run_output(os.path.join(run_dir, "log.txt")):
+            logger.info("[%d/%d] %s", i + 1, len(combos), combo or "(base)")
 
-        metrics = run_single(configs, run_dir, make_plots=args.plots)
-        row = {"run_id": i, **combo}
-        row.update({k: v for k, v in metrics.items() if k != "curves" and _json_safe(v)})
-        row["out_dir"] = run_dir
-        rows.append(row)
+            metrics = run_single(configs, run_dir, make_plots=args.plots)
+            row = {"run_id": i, **combo}
+            row.update({k: v for k, v in metrics.items() if k != "curves" and _json_safe(v)})
+            row["out_dir"] = run_dir
+            rows.append(row)
 
     _write_sweep_results(rows, combos, out_root, top=args.top)
 
@@ -460,32 +462,33 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     args = build_arg_parser().parse_args(argv)
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if args.sweep:
         out_root = args.out or os.path.join("results", "opt", f"sweep_{stamp}")
         os.makedirs(out_root, exist_ok=True)
-        logger.info("Preset=%s  output=%s", args.preset, out_root)
-        run_sweep(args, out_root)
+        with tee_run_output(os.path.join(out_root, "log.txt")):
+            logger.info("Preset=%s  output=%s", args.preset, out_root)
+            run_sweep(args, out_root)
     else:
         out_dir = args.out or os.path.join("results", "opt", f"single_{stamp}")
-        configs = build_configs(args)
-        logger.info("Preset=%s  output=%s", args.preset, out_dir)
-        metrics = run_single(configs, out_dir, make_plots=args.plots)
-        logger.info("score=%.4f  final_loss=%s", metrics["score"], _fmt(metrics.get("final_train_loss")))
-        for m in configs["eval"].m_values:
-            tag = f"m{m:g}"
-            logger.info(
-                "  [%s] A=%s (t=%s) t_rise=%s (t=%s) t_vortex=%s D=%s frac_crossed=%.2f vortex_depth=%s",
-                tag, _fmt(metrics.get(f"A_{tag}")), _fmt(metrics.get(f"A_target_{tag}")),
-                _fmt(metrics.get(f"t_rise_{tag}")), _fmt(metrics.get(f"t_rise_target_{tag}")),
-                _fmt(metrics.get(f"t_vortex_{tag}")), _fmt(metrics.get(f"D_{tag}")),
-                metrics.get(f"frac_crossed_{tag}", float("nan")),
-                _fmt(metrics.get(f"vortex_depth_{tag}")),
-            )
-        logger.info("Artifacts in %s", out_dir)
+        with tee_run_output(os.path.join(out_dir, "log.txt")):
+            configs = build_configs(args)
+            logger.info("Preset=%s  output=%s", args.preset, out_dir)
+            metrics = run_single(configs, out_dir, make_plots=args.plots)
+            logger.info("score=%.4f  final_loss=%s", metrics["score"], _fmt(metrics.get("final_train_loss")))
+            for m in configs["eval"].m_values:
+                tag = f"m{m:g}"
+                logger.info(
+                    "  [%s] A=%s (t=%s) t_rise=%s (t=%s) t_vortex=%s D=%s frac_crossed=%.2f vortex_depth=%s",
+                    tag, _fmt(metrics.get(f"A_{tag}")), _fmt(metrics.get(f"A_target_{tag}")),
+                    _fmt(metrics.get(f"t_rise_{tag}")), _fmt(metrics.get(f"t_rise_target_{tag}")),
+                    _fmt(metrics.get(f"t_vortex_{tag}")), _fmt(metrics.get(f"D_{tag}")),
+                    metrics.get(f"frac_crossed_{tag}", float("nan")),
+                    _fmt(metrics.get(f"vortex_depth_{tag}")),
+                )
+            logger.info("Artifacts in %s", out_dir)
 
 
 if __name__ == "__main__":
