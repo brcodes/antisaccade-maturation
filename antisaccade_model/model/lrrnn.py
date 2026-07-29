@@ -18,18 +18,24 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from ..task.task_params import TaskParams
-from .model_params import ModelParams
+from ..task.task_params import DEFAULT_TASK, TaskParams
+from .model_params import DEFAULT_MODEL, ModelParams
 from .readout import Readout
 
 
 class LRRNN(nn.Module):
     """Rank-constrained continuous-time RNN with a linear two-option readout."""
 
-    def __init__(self, model: ModelParams, task: TaskParams) -> None:
+    def __init__(
+        self,
+        model: Optional[ModelParams] = None,
+        task: Optional[TaskParams] = None,
+    ) -> None:
         super().__init__()
-        self.model = model
-        self.task = task
+        self.model = DEFAULT_MODEL if model is None else model
+        self.task = DEFAULT_TASK if task is None else task
+        model = self.model
+        task = self.task
         n, r = model.n_hidden, model.n_rank
 
         scale = model.init_rec_scale / (n ** 0.5)

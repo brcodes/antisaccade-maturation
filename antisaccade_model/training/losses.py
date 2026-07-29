@@ -21,8 +21,8 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from ..task.task_params import RULE_IDX, TOWARD_GOAL_IDX, TaskParams
-from ..task.tachometric_targets import extract_summary_stats, params_for_m, tachometric_curve
+from ..task.task_params import MATURATION_IDX, RULE_IDX, TOWARD_GOAL_IDX, TaskParams
+from ..task.tachometric_targets import extract_summary_stats, params_for_m, tachometric_curve, target_summary_stats
 
 
 def soft_commitment(z: torch.Tensor, task: TaskParams) -> dict:
@@ -181,10 +181,10 @@ def behavioral_loss(
 
     u_lapse = batch["u"].clone()
     u_lapse[:, :, RULE_IDX] = 0.0
+    u_lapse[:, :, MATURATION_IDX] = 0.0
     _, _, z_lapse = model(u_lapse, h0=batch.get("h0"), add_noise=True)
     soft_lapse = soft_commitment(z_lapse, task)
 
-    beh_loss = torch.zeros(())
     per_m = {}
     curve_loss = torch.zeros(())
     for m_value, tgt in targets.items():
@@ -195,17 +195,14 @@ def behavioral_loss(
         p_goal_mix = (1.0 - lambda_m) * soft_commit["p_goal"][mask] + lambda_m * soft_lapse["p_goal"][mask]
         rpt_mix = (1.0 - lambda_m) * rpt[mask] + lambda_m * (soft_lapse["t_commit"][mask] - batch["t_cue"][mask])
         tc = soft_tachometric_curve(p_goal_mix, rpt_mix, grid, task.rpt_bin_width)
-        stats = extract_summary_stats(tc, grid, **extractor_kwargs)
-        beh_loss = beh_loss + summary_stat_loss(stats, tgt)
         target_curve = tachometric_curve(rpt_mix, params_for_m(float(m_value)))
         trial_bce = F.binary_cross_entropy(p_goal_mix, target_curve, reduction="none")
         curve_loss = curve_loss + (rpt_weight(rpt_mix) * trial_bce).mean()
-        per_m[m_value] = {"tc": tc.detach(), "stats": {k: v.detach() for k, v in stats.items()}}
+        per_m[m_value] = {"tc": tc.detach()}
 
     reg = regularization(model, r, model.model.lambda_reg)
-    total = beh_loss + curve_loss + reg
+    total = curve_loss + reg
     info = {
-        "behavior": beh_loss.detach(),
         "curve": curve_loss.detach(),
         "reg": reg.detach(),
         "total": total.detach(),
@@ -213,3 +210,12 @@ def behavioral_loss(
         "frac_crossed": commit["crossed"].float().mean().detach(),
     }
     return total, info
+
+
+def compute_loss(model, batch: dict) -> tuple[torch.Tensor, dict]:
+    """Compute the default behavioral training loss for a prepared batch."""
+    task = model.task
+    m_values = tuple(float(m) for m in torch.unique(batch["m"]).tolist())
+    targets = {m: target_summary_stats(m, task) for m in m_values}
+    grid = torch.tensor(task.rpt_grid, dtype=batch["u"].dtype, device=batch["u"].device)
+    return behavioral_loss(model, batch, task, targets, grid)

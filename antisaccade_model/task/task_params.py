@@ -60,6 +60,10 @@ class TaskParams:
     # recurrent noise standard deviation (free parameter)
     sigma_noise: float = 0.1
 
+    # Trial-to-trial initial-state variability shared across or private to units.
+    sigma_init_shared: float = 0.7
+    sigma_init_private: float = 0.05
+
     # analysis rPT grid
     rpt_min: float = 0.0
     rpt_max: float = 300.0

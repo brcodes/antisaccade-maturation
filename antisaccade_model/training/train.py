@@ -13,6 +13,7 @@ from typing import Optional
 
 import torch
 
+from ..analysis.tachometric_analysis import hard_summary_stat_mse
 from ..model.lrrnn import LRRNN
 from ..model.model_params import DEFAULT_MODEL, ModelParams
 from ..task.task_params import DEFAULT_TASK, TaskParams
@@ -34,6 +35,7 @@ class TrainConfig:
     resume_checkpoint: str | None = None
     m_choices: tuple[float, ...] = (0.0, 1.0)
     log_every: int = 50
+    hard_eval_trials_per_gap: int = 10
     plateau_patience: int = 50
     plateau_factor: float = 0.5
     seed: int = 0
@@ -43,20 +45,22 @@ class TrainConfig:
 
 def make_batch(
     batch_size: int,
-    epoch: int,
-    task: TaskParams,
-    cfg: TrainConfig,
-    generator: torch.Generator,
-    n_hidden: int,
+    epoch: int = 0,
+    task: TaskParams = DEFAULT_TASK,
+    cfg: Optional[TrainConfig] = None,
+    generator: Optional[torch.Generator] = None,
+    n_hidden: int = DEFAULT_MODEL.n_hidden,
+    m_values: Optional[list[float]] = None,
 ) -> dict:
     """Assemble a training batch using the curriculum gap schedule."""
+    cfg = cfg or TrainConfig()
     gaps = sample_curriculum_gaps(batch_size, epoch, task, cfg.warmup_epochs, generator)
     cue_sides = torch.randint(0, 2, (batch_size,), generator=generator)
-    m_pool = torch.tensor(cfg.m_choices)
-    m_values = m_pool[torch.randint(0, len(m_pool), (batch_size,), generator=generator)]
-    u, t_cue = build_inputs(gaps, cue_sides, m_values, task)
+    m_pool = torch.tensor(cfg.m_choices if m_values is None else m_values)
+    sampled_m = m_pool[torch.randint(0, len(m_pool), (batch_size,), generator=generator)]
+    u, t_cue = build_inputs(gaps, cue_sides, sampled_m, task)
     h0 = sample_initial_state(batch_size, n_hidden, task, generator=generator)
-    return {"u": u, "gaps": gaps, "cue_sides": cue_sides, "m": m_values, "t_cue": t_cue, "h0": h0}
+    return {"u": u, "gaps": gaps, "cue_sides": cue_sides, "m": sampled_m, "t_cue": t_cue, "h0": h0}
 
 
 def train(
@@ -95,16 +99,23 @@ def train(
         scheduler.step(info["total"])
 
         record = {"epoch": epoch, "loss": float(info["total"]),
-                  "behavior": float(info["behavior"]), "reg": float(info["reg"]),
+                  "curve": float(info["curve"]), "reg": float(info["reg"]),
                   "frac_crossed": float(info["frac_crossed"])}
-        history.append(record)
 
         if epoch % cfg.log_every == 0 or epoch == cfg.epochs - 1:
+            model.eval()
+            hard_mse, hard_stats = hard_summary_stat_mse(
+                model, task, targets, cfg.m_choices, cfg.hard_eval_trials_per_gap
+            )
+            model.train()
+            record["hard_summary_mse"] = hard_mse
+            record["hard_stats"] = hard_stats
             print(
                 f"epoch {epoch:4d} | loss {record['loss']:.5f} "
-                f"| beh {record['behavior']:.5f} | reg {record['reg']:.5f} "
+                f"| curve {record['curve']:.5f} | hard {hard_mse:.5f} | reg {record['reg']:.5f} "
                 f"| crossed {record['frac_crossed']:.2f}"
             )
+        history.append(record)
 
     _save_checkpoint(model, cfg, model_params, task, history)
     return model, history

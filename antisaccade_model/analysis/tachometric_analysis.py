@@ -25,9 +25,11 @@ def run_gap_sweep(
     model: LRRNN,
     task: TaskParams,
     m_value: float,
-    trials_per_gap: int = 200,
+    trials_per_gap: int = 1000,
     gap_grid: Optional[np.ndarray] = None,
     add_noise: bool = True,
+    collect_rates: bool = True,
+    batch_size: int = 128,
 ) -> dict:
     """Simulate a gap sweep and return per-trial behavior plus hidden rates.
 
@@ -47,9 +49,21 @@ def run_gap_sweep(
         lapse_rate=float(model.lapse_rate(m_value)),
     )
 
-    _, r, z = model(batch["u"], h0=batch["h0"], add_noise=add_noise)
-    commit = hard_commitment(z, task)
-    rpt = commit["t_commit"] - batch["t_cue"]
+    if collect_rates:
+        _, r, z = model(batch["u"], h0=batch["h0"], add_noise=add_noise)
+        commit = hard_commitment(z, task)
+        rpt = commit["t_commit"] - batch["t_cue"]
+    else:
+        r = z = None
+        commits = []
+        for start in range(0, batch["u"].shape[1], batch_size):
+            stop = start + batch_size
+            _, _, z_chunk = model(
+                batch["u"][:, start:stop], h0=batch["h0"][start:stop], add_noise=add_noise
+            )
+            commits.append(hard_commitment(z_chunk, task))
+        commit = {key: torch.cat([item[key] for item in commits]) for key in commits[0]}
+        rpt = commit["t_commit"] - batch["t_cue"]
     return {
         "rpt": rpt,
         "correct": commit["p_goal"],  # hard 0/1
@@ -129,11 +143,42 @@ def model_tachometric(
     model: LRRNN,
     task: TaskParams,
     m_value: float,
-    trials_per_gap: int = 200,
+    trials_per_gap: int = 1000,
 ) -> dict:
     """Convenience: sweep, bin, and fit for one maturation state."""
     grid = task.rpt_grid
-    sweep = run_gap_sweep(model, task, m_value, trials_per_gap)
+    sweep = run_gap_sweep(model, task, m_value, trials_per_gap, collect_rates=False)
     tc, counts = empirical_tachometric_curve(sweep["rpt"], sweep["correct"], grid)
     stats = fit_summary_stats(grid, tc)
     return {"grid": grid, "tc": tc, "counts": counts, "stats": stats, "sweep": sweep}
+
+
+def generate_tachometric_curve(
+    model: LRRNN,
+    m: float,
+    N: int = 1000,
+) -> np.ndarray:
+    """Generate a hard-threshold tachometric curve with ``N`` trials per gap."""
+    return model_tachometric(model, model.task, m, trials_per_gap=N)["tc"]
+
+
+def hard_summary_stat_mse(
+    model: LRRNN,
+    task: TaskParams,
+    targets: dict[float, dict],
+    m_values: tuple[float, ...],
+    trials_per_gap: int,
+) -> tuple[float, dict[float, dict]]:
+    """Measure target fit from hard first-passage tachometric curves."""
+    weights = {"t_rise": 1e-4, "A": 1.0, "t_vortex": 1e-4, "D": 1.0}
+    total = 0.0
+    per_m = {}
+    for m_value in m_values:
+        fitted = model_tachometric(model, task, m_value, trials_per_gap)
+        stats = fitted["stats"]
+        total += sum(
+            weights[key] * (stats[key] - float(targets[m_value][key])) ** 2
+            for key in weights
+        )
+        per_m[m_value] = stats
+    return total, per_m

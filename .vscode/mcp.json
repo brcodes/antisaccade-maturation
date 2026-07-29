@@ -1,13 +1,13 @@
 {
   "servers": {
     "code-review-graph": {
-      "command": "/opt/miniconda3/envs/tcia-lung1-seg-class-cpu/bin/python3.10",
+      "command": "/opt/miniconda3/envs/tcia-lung1-seg-class-cpu/bin/python",
       "args": [
         "-m",
         "code_review_graph",
         "serve"
       ],
-      "cwd": "/Users/brycerogers/Documents/antisaccade_maturation",
+      "cwd": "/Users/brycerogers/Documents/antisaccade-maturation",
       "type": "stdio"
     }
   }

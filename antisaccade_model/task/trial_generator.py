@@ -20,6 +20,7 @@ from .task_params import (
     MATURATION_IDX,
     N_INPUT,
     RULE_IDX,
+    DEFAULT_TASK,
     TaskParams,
 )
 
@@ -27,10 +28,11 @@ from .task_params import (
 def sample_initial_state(
     batch_size: int,
     n_hidden: int,
-    task: TaskParams,
+    task: Optional[TaskParams] = None,
     generator: Optional[torch.Generator] = None,
 ) -> torch.Tensor:
     """Sample the trial initial state with shared and private variability."""
+    task = DEFAULT_TASK if task is None else task
     shared = torch.randn(batch_size, 1, generator=generator) * task.sigma_init_shared
     private = torch.randn(batch_size, n_hidden, generator=generator) * task.sigma_init_private
     return shared + private
@@ -72,6 +74,8 @@ def build_inputs(
     if lapse_mask is not None:
         u[:, lapse_mask, RULE_IDX] = 0.0
     u[:, :, MATURATION_IDX] = m_values[None, :]
+    if lapse_mask is not None:
+        u[:, lapse_mask, MATURATION_IDX] = 0.0
 
     # Cue onset per trial and time relative to it.
     t_cue = task.t_pre + gaps                       # [B]
@@ -125,6 +129,8 @@ def sweep_batch(
     gaps: torch.Tensor,
     trials_per_gap: int,
     cue_sides: Optional[torch.Tensor] = None,
+    n_hidden: Optional[int] = None,
+    lapse_rate: float = 0.0,
     generator: Optional[torch.Generator] = None,
 ) -> dict:
     """Build a deterministic gap sweep for one maturation state (analysis use).
@@ -137,11 +143,15 @@ def sweep_batch(
     if cue_sides is None:
         cue_sides = (torch.arange(batch) % 2)
     m_values = torch.full((batch,), float(m_value))
-    u, t_cue = build_inputs(gaps, cue_sides, m_values, task)
+    lapse_mask = torch.rand(batch, generator=generator) < lapse_rate
+    u, t_cue = build_inputs(gaps, cue_sides, m_values, task, lapse_mask=lapse_mask)
+    h0 = sample_initial_state(batch, n_hidden, task, generator) if n_hidden is not None else None
     return {
         "u": u,
         "gaps": gaps,
         "cue_sides": cue_sides,
         "m": m_values,
         "t_cue": t_cue,
+        "h0": h0,
+        "lapse_mask": lapse_mask,
     }
