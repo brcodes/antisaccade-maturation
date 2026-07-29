@@ -5,6 +5,15 @@ Targets (ground truth, confirmed correct from sweep 2 onward):
 - adult: A=0.97, t_rise=140ms, t_vortex=106ms, D=0.27
 - score = weighted behavioral MSE + crossing penalty; lower is better; always read alongside frac_crossed
 
+**Architectural gaps (gameplan v2 delta — not yet implemented):**
+- Lapse mechanism: if no crossing by T_max=450ms, force argmax(z(T_max)). Required for A to differ between m=0/m1. Without it the model has no pathway for m to influence asymptotic performance — explains A ceiling ~0.85 seen throughout.
+- Stochastic initial state: `h(0) = h_mean(m) + σ_shared·ε_shared·1_N + σ_private·ε_private`, σ_shared≈0.3, σ_private≈0.1. Required for realistic rPT variance and vortex depth.
+- Both will shift the loss landscape; fresh LR search required after implementation.
+
+**rpt_step note:** affects the training objective (soft-binning in losses.py), not just evaluation. Changing it changes what the model trains against.
+
+**t_pre note:** pre-cue attractor establishment window. Low-priority variable — matters only if RNN hasn't converged to baseline within 50ms of simulation time. Likely fast at n_hidden=64.
+
 ---
 
 ```bash
@@ -147,14 +156,81 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --sweep train.grad_clip=0.5,1.0,2.0,5.0 \
     --no-plots --top 4
 ```
-- Library default grad_clip already = 1.0; sweeping it changed nothing (identical loss values confirmed). Spikes are loss noise from stochastic Monte Carlo behavioral objective, not gradient explosion — crossed=1.00 throughout proves race is stable. batch_size confirmed at library default 256. At practical limit of smoke resolution: t_post=250 (vs full 500) truncates A/t_rise gradient; rpt_step=30 (vs full 10) gives ~6 bins instead of ~18. Loss landscape degeneracy confirmed (different LRs → same behavioral output). Next: restore full timeline and bin resolution.
+- Library default grad_clip already = 1.0; sweeping it changed nothing. Spikes are loss noise from stochastic Monte Carlo behavioral objective — not gradient explosion. batch_size confirmed at library default 256. At practical limit of smoke resolution.
+
+---
+
+```bash
+# Run 13 — full resolution diagnostic (n_hidden=100)
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 --set task.a_exo=3 --set task.tau_exo=30 \
+    --set model.n_hidden=100 --set train.lr=3e-3 --set train.epochs=300 \
+    --set task.t_pre=100 --set task.t_post=500 --set task.rpt_step=10 \
+    --no-plots
+```
+- Dead race from epoch 10. Score=4.13, frac_crossed=0.00 both states. LR=3e-3 tuned for smoke resolution does not transfer to full timeline — same principle as sweep 10 (LR is resolution-dependent).
+
+---
+
+```bash
+# Sweeps 14–15 — LR search at n_hidden=100, t_post=500 (abandoned)
+--sweep train.lr=3e-3,5e-3,8e-3,1.2e-2   # sweep 14
+--sweep train.lr=1.2e-2,1.5e-2,2e-2,3e-2  # sweep 15
+```
+- LR=1.2e-2 only partial escape (m1 only, never m0). All others dead. No viable config at n_hidden=100/t_post=500. Abandoned; fell back to n_hidden=64.
+
+---
+
+```bash
+# Sweep 16 — LR search at n_hidden=64, t_post=500
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 --set task.a_exo=3 --set task.tau_exo=30 \
+    --set model.n_hidden=64 --set train.epochs=300 \
+    --set task.t_pre=100 --set task.t_post=500 --set task.rpt_step=10 \
+    --sweep train.lr=1e-3,3e-3,5e-3,8e-3 --no-plots --top 4
+```
+- LR=8e-3 only survivor (crossed 0.55–1.00 all 300 epochs) but loss doesn't descend. Lower LRs establish race then die. Pattern: race finds good basin early, then walks out at every LR. Two-stage training implemented.
+
+---
+
+```bash
+# Two-stage training — harness modification
+# Added resume_checkpoint field to TrainConfig; loads state_dict only (not optimizer state)
+# Stage 1: establish race at high LR; Stage 2: resume at low LR to descend
+
+# Sweeps 17a/b/c — two-stage at n_hidden=64, t_post=500 (failed)
+# 17a: 100 epochs LR=8e-3 → checkpoint results/opt/single_20260728_163950/model.pt
+# 17b: 200 epochs LR=1e-3 resume — race alive but loss flat (7.3–11.0), no descent
+# 17c: sweep LR=2e-3,3e-3,5e-3 resume — all find good basin briefly then die
+#   LR=2e-3: loss 4.52 at epoch 130, dead by epoch 199
+#   LR=3e-3: loss 6.27 by epoch 60, dead by epoch 120
+#   LR=5e-3: loss 4.51 at epoch 30(!), immediately destabilizes
+```
+- Two-stage delays collapse but doesn't prevent it. Not an LR problem — structural. Warmup ruled out (collapse 100+ epochs after curriculum stabilizes). STE hypothesis raised, then tested in sweep 18.
+
+---
+
+```bash
+# Sweep 18 — t_post isolation (STE hypothesis test)
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 --set task.a_exo=3 --set task.tau_exo=30 \
+    --set model.n_hidden=64 --set train.epochs=300 --set train.lr=8e-3 \
+    --set task.t_pre=100 --set task.rpt_step=10 \
+    --sweep task.t_post=150,250,350,500 --no-plots --top 4
+```
+- t_post=150: dead by epoch 60, false minimum (loss ~1.9, crossed=0.00)
+- t_post=250: crossed=1.00 both states all 300 epochs, score=0.132 — reproduces smoke result exactly
+- t_post=350: dead at epoch 40, loss ~1.0–1.3, A=0.9999 (constant readout, no race)
+- t_post=500: crossed 0.55–1.00, score=1.72, but loss never descends
+
+STE hypothesis ruled out — non-monotone relationship between t_post and survival. Key finding: **t_post=250 is the viable training window**. The full-resolution confound was always t_post specifically, not t_pre or rpt_step.
 
 ---
 
 **Current locked config:**
-`θ=0.75, a_exo=3, τ_exo=30, n_hidden=100, LR=3e-3, epochs=300, batch_size=256`
+`θ=0.75, a_exo=3, τ_exo=30, n_hidden=100, LR=3e-3, epochs=300, batch_size=256, t_post=250 (smoke default)`
 
-**Next run:**
+**Immediate next sweep (19):**
 ```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set task.threshold=0.75 \
@@ -164,8 +240,8 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set train.lr=3e-3 \
     --set train.epochs=300 \
     --set task.t_pre=100 \
-    --set task.t_post=500 \
-    --set task.rpt_step=10 \
-    --no-plots
+    --set task.t_post=250 \
+    --sweep task.rpt_step=30,10 \
+    --no-plots --top 2
 ```
-Single diagnostic run. Success gate: loss shows genuine downward trend (not 3.5–9.2 pinball). Score improves vs 0.132.
+Confirm rpt_step=10 doesn't break training at t_post=250. If stable, lock rpt_step=10 as new smoke baseline. Then implement lapse mechanism and stochastic initial state before further hyperparameter search.
