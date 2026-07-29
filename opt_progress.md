@@ -451,8 +451,7 @@ Both architectural gaps identified at end of sweep 18 are now implemented and va
 
 ---
 
-### Original sweep 19 plan — superseded by the result below
-
+### Original sweep 19 plan 
 ```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set task.threshold=0.75 \
@@ -467,52 +466,8 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --no-plots --top 2
 ```
 
-**If stable:** lock rpt_step=10. **If not:** keep rpt_step=30 for training; rpt_step=10 for eval only. LR=8e-3 here is the last operative value — result is directionally useful but LR must be re-confirmed in sweep 20 regardless.
-
----
-
-### Sweep 20 — LR re-search at n_hidden=64/t_post=250 with new architecture (pending)
-
-Run after sweep 19.
-
-```bash
-python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
-    --set task.threshold=0.75 \
-    --set task.a_exo=3 \
-    --set task.tau_exo=30 \
-    --set model.n_hidden=64 \
-    --set train.epochs=300 \
-    --set task.t_pre=100 \
-    --set task.t_post=250 \
-    --set task.rpt_step=[from sweep 19] \
-    --sweep train.lr=1e-3,3e-3,5e-3,8e-3 \
-    --no-plots --top 4
-```
-
-Pre-architecture, t_post=250/n_hidden=64 used LR=1e-3 (smoke, sweeps 7–8) and LR=8e-3 (full resolution, sweep 18). The lapse branch and stochastic h0 both change the loss landscape. Sweep the full range. Watch frac_crossed as primary health metric. If all dead: try two-stage approach.
-
----
-
-### Sweep 21 — t_post=500 retest at n_hidden=64 with new architecture (pending)
-
-Run after sweep 20 confirms a viable LR.
-
-```bash
-python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
-    --set task.threshold=0.75 \
-    --set task.a_exo=3 \
-    --set task.tau_exo=30 \
-    --set model.n_hidden=64 \
-    --set train.epochs=300 \
-    --set task.t_pre=100 \
-    --set task.rpt_step=[from sweep 19] \
-    --set train.lr=[from sweep 20] \
-    --set task.t_post=500 \
-    --no-plots
-```
-
-The lapse branch provides gradient even when the normal branch doesn't cross threshold — this is the structural change most likely to fix the t_post=500 non-learning problem seen in sweeps 16–17. If race establishes and loss descends: t_post=500 is viable. If not: the t_post failure is not architectural — investigate whether the rPT distribution at t_post=500 overweights uninformative guessing-tail trials.
-
+ran also 
+--set train.lr=1e-3
 ---
 
 ### Sweep 19 result — post-architecture rPT-grid check
@@ -546,3 +501,277 @@ timeline sweeps.
     this is a loss change, not an evaluation-only change.
 4. Retest `t_post=500` with the recovered LR/grid pair. Sweep learned-lapse
     endpoint initializers and revisit capacity only after these gates pass.
+
+sweep 20
+
+Ran
+
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.threshold=0.75 \
+    --set task.a_exo=3 \
+    --set task.tau_exo=30 \
+    --set model.n_hidden=64 \
+    --set train.lr=1e-3 \
+    --set train.epochs=300 \
+    --set task.t_pre=100 \
+    --set task.t_post=250 \
+    --set task.rpt_step=30 \
+    --sweep task.sigma_init_shared=0.3,0.5,0.7 \
+    --sweep task.sigma_init_private=0.0,0.05 \
+    --no-plots --top 6
+    
+    
+Res:
+This isn't a sigma_init problem — sigma_init barely moved the score (4.6 → 5.6), and the ordering is noisy enough that it's mostly reflecting lapse/curve-fit noise, not a real signal from the parameter being swept.
+
+A few things to pull from the results.csv that are meaningful despite the dead race:
+
+m1 is producing real curves. Look at t_rise_m1 (81–141ms), t_vortex_m1 (60–141ms), D_m1 (0.07–0.19) — these are nonzero and in the right ballpark. frac_crossed_m1=0.00 but vortex_depth_m1 ≈ -0.39 everywhere, meaning the hard curve is dipping below chance. The hard-crossing counter is the problem, not the dynamics.
+m0 is partially alive too — t_rise_m0 ranges 176–204ms, A_m0 reaches 0.93, vortex_depth_m0 ≈ -0.37. Real dynamics, just not crossing the threshold on enough trials to register.
+The "dead race" classification (frac_crossed=0.00) is being triggered by the hard-threshold counter, but the model is clearly doing something — it's not the all-zero collapse you saw in sweeps 16/17.
+
+What's actually going wrong: vortex_depth < 0 but frac_crossed = 0.00 is a signature of a model where the accumulator is active but the output readout isn't scaling enough to cross threshold=0.75 on enough trials at hard-eval time. The soft training loss is working (you're getting shaped curves), but the hard threshold crossing metric disagrees.
+
+This points to one of two things:
+
+threshold=0.75 is now too high for the post-architecture model — the lapse branch and h0 variability are competing with the signal that drives the accumulator past the threshold.
+LR=1e-3 isn't pushing the readout weights hard enough to generate crossings, even though it shapes the soft curve.
+
+
+
+Sweep 20 
+
+Res:
+This is expected: at θ=0.3 the race crosses too readily, so the exogenous capture doesn't have time to drag it down. The model is finding a valid regime but it's a different one from the target — fast threshold produces fast crossing that washes out the vortex timing. This is the same D vs t_vortex anti-correlation from the pre-architecture sweeps, now re-appearing here.
+
+What this tells you about the root cause
+
+The pre-architecture model trained fine at θ=0.75. Post-architecture, the viable threshold window has shifted dramatically downward. The lapse branch is the most likely explanation: with λ_young=0.08, ~8% of trials have no rule signal and the accumulator drifts randomly. At θ=0.75 those trials almost never cross, which pulls the hard-crossing metric below the penalty knee — but more importantly, the lapse branch also receives gradients, and those gradients pull the readout weights toward lower gain (since lower-gain outputs are more "correct" for lapse trials where no crossing should occur). This suppresses the normal branch's ability to cross.
+
+Sweep 22 — fine threshold scan around the cliff
+
+Before changing anything else, find where exactly the cliff is and whether there's a stable zone between 0.3 and 0.5.
+
+bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.a_exo=3 --set task.tau_exo=30 \
+    --set model.n_hidden=64 --set train.lr=1e-3 \
+    --set train.epochs=300 --set task.t_pre=100 --set task.t_post=250 \
+    --set task.rpt_step=30 \
+    --set task.sigma_init_shared=0.3 --set task.sigma_init_private=0.05 \
+    --sweep task.threshold=0.3,0.35,0.4,0.45 \
+    --no-plots --top 4
+
+If 0.35 or 0.4 survive, you may be able to find a threshold where the race is alive but the vortex timing isn't as washed out.
+
+
+Res:
+Sweep 22 diagnosis
+
+The cliff is now precisely mapped:
+
+threshold	frac_crossed m0 / m1	score	verdict
+0.30	0.55 / 0.65	1.223	alive, timing badly late
+0.35	0.51 / 0.58	0.839	alive, better
+0.40	0.46 / 0.50	0.587	winner — best score, vortex timing on target
+0.45	0.09 / 0.01	4.486	dying by epoch 130, dead by 250
+
+The viable zone is 0.30–0.40, with a hard cliff between 0.40 and 0.45. And critically, θ=0.40 wins on score, not just on survival — the behavioral fit is genuinely better than 0.30 or 0.35.
+
+What the θ=0.40 metrics say:
+
+t_vortex_m0 = 115.6ms (target 105ms) — nearly on target, vs 192ms at θ=0.30
+A_m0 = 0.908 (target 0.92) — very close
+D_m0 = 0.141 (target 0.28) — shallow, but vortex_depth_m0 = −0.19 so the curve dips real, Gaussian fit is probably struggling at smoke resolution (same diagnosis as pre-architecture sweeps)
+frac_crossed m0/m1 = 0.46 / 0.50 — right at the 0.4 penalty knee, fragile
+m1 collapse: D_m1 ≈ 0, t_rise_m1 = 163ms — adult state isn't fitting well
+
+The one concern: frac_crossed at 0.46/0.50 is barely above the penalty threshold. The race is alive but marginal. At 300 epochs it's holding, but this is likely to drift if you push anything else (larger t_post, higher LR). θ=0.40 is the right working point but it needs LR optimization to stabilize it.
+
+m1 pattern: Both θ=0.35 and θ=0.40 show D_m1 ≈ 0 (or near-zero) and the t_rise_m1 for θ=0.35 collapses to 80ms. This is the same m1 weakness seen pre-architecture. At smoke resolution the adult state is systematically harder to fit. Not a blocker now — it's a capacity/training-length issue, not a dead race.
+
+What to do next
+
+θ=0.40 is the new working baseline. The architecture + sigma_init=(0.3, 0.05) is Phase-0 healthy at this threshold. Now do what the plan called for after recovery: re-search LR.
+
+Sweep 23 — LR search at θ=0.40
+bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.a_exo=3 --set task.tau_exo=30 \
+    --set model.n_hidden=64 \
+    --set train.epochs=300 --set task.t_pre=100 --set task.t_post=250 \
+    --set task.rpt_step=30 \
+    --set task.sigma_init_shared=0.3 --set task.sigma_init_private=0.05 \
+    --set task.threshold=0.40 \
+    --sweep train.lr=5e-4,1e-3,3e-3,5e-3 \
+    --no-plots --top 4
+
+The current LR=1e-3 has frac_crossed just barely above the gate. A better LR may either (a) push frac_crossed higher for the same threshold, giving headroom, or (b) improve the score by fitting m1's D and t_rise. Watch frac_crossed first — if a higher LR pushes it above 0.6 without killing it, that's the winner. The pre-architecture pattern was that LRs above 3e-3 caused collapse at t_post=250, but the loss landscape is different now, so test the range fresh.
+
+After LR is locked, the sequence from the plan resumes: rpt_step, then t_post=500 retest, then lapse endpoint sweep, then capacity.
+
+One thing worth noting for the opt_progress log: the post-architecture viable threshold (0.40) is meaningfully lower than the pre-architecture optimum (0.75). This needs to be tracked as a scientific consideration, not just an engineering one — if the model that fits the behavioral data requires θ=0.40 rather than 0.75, that's a statement about what accumulation-to-bound value the lapse architecture implies. Worth flagging for the biological/mechanistic tuning phase (OPT_README §9).
+
+Q about threshold- doesn't 0.4 undermine us scientifically given the 0.75, well-established precedent?
+
+Claude:
+What the threshold actually represents
+
+In your architecture, θ is the readout threshold — the value that the output unit's activation must cross for a commitment to be detected. This is not directly the biological decision threshold in the accumulator-to-bound sense. It's a parameter of the detection rule applied to the model's output, not a parameter of the underlying recurrent dynamics.
+
+The biological claim in Mastrogiuseppe/Ostojic-style LR-RNNs is that the recurrent dynamics implement the race/accumulation, and the readout just reads out the result. So θ in your code is more like "how large does the output projection need to be before we call it a commitment" — which is partly a function of the readout weight scale, the recurrent gain, and the initialization, not purely a statement about the animal's decision criterion.
+
+This means θ=0.40 vs θ=0.75 is not necessarily a scientific claim about what threshold the monkey uses. It may just reflect that your readout weights are currently initialized/scaled such that the output activations live in a lower range, and θ needs to match that range for the crossing detector to work.
+
+The question to ask is: does the vortex appear at the right rPT, at the right depth, with the right asymptote — and does the SI signal come out correctly — regardless of what numerical value of θ you needed to use to get there? If yes, θ is an internal engineering parameter, not a scientific claim.
+
+When θ would be scientifically non-negotiable
+
+θ would be a hard scientific constraint if your model is explicitly implementing a drift-diffusion / race-to-bound where θ is the bound height, and the bound height has a known empirical value from the physiology. From the Zhu et al. 2024 paper and the Salinas/Stanford circuit model: the relevant physiological quantities are the timing of commitment (t_rise, t_vortex) and the shape of the tachometric curve, not the raw activation scale. The FEF/dlPFC SI signal that you're trying to predict post-hoc is a spatial selectivity index, which is also a relative/normalized quantity.
+
+Sweep 23 diagnosis
+
+Clear result. The LR landscape at θ=0.40 is:
+
+LR	frac_crossed m0/m1	score	verdict
+5e-4	0.52 / 0.85	0.831	alive, m1 excellent, m0 timing late
+1e-3	0.46 / 0.50	0.587	winner on score
+3e-3	0.00 / 0.00	4.327	dead by epoch 60
+5e-3	0.00 / 0.00	5.401	dead by epoch 90
+
+The viable LR window is narrow: only 5e-4 and 1e-3 survive. 3e-3 kills the race exactly as it did pre-architecture at this t_post — the lapse branch didn't open up the upper end of the LR range.
+
+But the interesting comparison is 5e-4 vs 1e-3:
+
+LR=5e-4 doesn't win on score (0.831 vs 0.587) but it has some genuinely better individual metrics:
+
+frac_crossed_m1 = 0.85 vs 0.50 — the adult race is much more robust
+t_rise_m1 = 96ms (target 140ms) — undershooting but the right order of magnitude, vs 163ms at 1e-3
+t_vortex_m1 = 91ms (target 106ms) — nearly on target
+D_m1 = 0.061 — still weak but nonzero
+final_loss = 2.05 vs 2.60 — meaningfully lower, model is actually learning more
+
+LR=1e-3 wins on score primarily because m0 metrics happen to be better, but its m1 state is essentially degenerate (D_m1 ≈ 0, frac_crossed_m1 = 0.50). The score function weights the two maturation states together, so a model that does well on one and poorly on the other can outscore a model that does moderately well on both.
+
+The real signal here: 5e-4 is finding a better basin (lower loss, m1 healthier) but needs more epochs to close the gap on m0. LR=1e-3 is more aggressive but leaving m1 behind.
+
+Sweep 23b — fine LR between 5e-4 and 1e-3
+
+There may be a sweet spot that gives better m1 robustness than 1e-3 while converging faster than 5e-4:
+
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.a_exo=3 --set task.tau_exo=30 \
+    --set model.n_hidden=64 \
+    --set train.epochs=300 \
+    --set task.t_pre=100 --set task.t_post=250 \
+    --set task.rpt_step=30 \
+    --set task.sigma_init_shared=0.3 --set task.sigma_init_private=0.05 \
+    --set task.threshold=0.40 \
+    --sweep train.lr=5e-4,7e-4,1e-3 \
+    --no-plots --top 3
+
+    just ran .0007 by itself.
+
+also ran a .0001. No long epoch test yet. where to
+
+
+Let me parse what you have: two single runs — LR=7e-4 and LR=1e-4.
+
+LR=7e-4 (first metrics.json/log):
+
+score=0.938, loss=2.177
+m0: t_vortex=115ms ✓, A=0.988, frac_crossed=0.50, D=0.036
+m1: t_vortex=177ms (badly late), A=1.0, frac_crossed=0.72, D=0.035
+crossed hovers 0.55–0.80 all 300 epochs, never collapses
+
+LR=1e-4 (second metrics.json/log):
+
+score=2.637, loss=1.794 (lowest loss yet)
+m0: t_vortex=138ms, A=0.982, frac_crossed=0.54, D≈0
+m1: t_vortex=108ms ✓✓ (nearly perfect), A=0.607 (collapsed), frac_crossed=0.97, D=0.45, t_rise=NaN
+crossed very stable 0.67–0.84 throughout — the most stable race you've seen
+What these two runs tell you together
+
+The picture across all five tested LRs is now:
+
+LR	score	loss	m0 t_vortex	m1 t_vortex	frac_crossed m0/m1	stability
+1e-4	2.64	1.79	138ms	108ms ✓	0.54/0.97	excellent
+5e-4	0.83	2.05	175ms	91ms	0.52/0.85	good
+7e-4	0.94	2.18	115ms ✓	177ms	0.50/0.72	good
+1e-3	0.59	2.60	115ms ✓	163ms	0.46/0.50	marginal
+3e-3	dead	—	—	—	0/0	—
+
+There's a clean inversion: as LR decreases, m1 gets better and m0 gets worse. LR=1e-4 has near-perfect m1 t_vortex but m1 A has collapsed (0.607) and m0 timing is late. LR=1e-3 has good m0 but m1 is marginal. No single LR fits both states well at 300 epochs.
+
+This is a capacity/epoch problem, not a hyperparameter problem. The two maturation states are pulling the model in different directions at 300 epochs of smoke resolution. The model has enough capacity to fit one well at a time, but 300 epochs isn't long enough for it to settle both simultaneously. LR just controls which state gets priority first.
+
+The low loss at LR=1e-4 (1.794 vs 2.60 at 1e-3) with a still-alive race and stable crossings is the key signal — this LR is genuinely learning more, it's just not done yet.
+
+What to do
+
+Skip the fine LR search and go straight to epoch extension. You have enough information.
+
+Sweep 24 — epoch extension at 7e-4 and 1e-4
+bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.a_exo=3 --set task.tau_exo=30 \
+    --set model.n_hidden=64 \
+    --set task.t_pre=100 --set task.t_post=250 \
+    --set task.rpt_step=30 \
+    --set task.sigma_init_shared=0.3 --set task.sigma_init_private=0.05 \
+    --set task.threshold=0.40 \
+    --sweep train.lr=7e-4,1e-4 \
+    --sweep train.epochs=600,1000 \
+    --no-plots --top 4
+
+NOW:
+PIVOT N=100
+
+This is a pivotal result. Let me lay out the full picture.
+
+Sweep 24 diagnosis
+config	score	loss	m0 t_vortex	m0 frac_crossed	m1 t_vortex	m1 frac_crossed	m1 A
+1e-4 / 600ep	0.904	1.106	63ms	0.54	124ms	0.977	1.000
+7e-4 / 1000ep	1.463	1.635	115ms ✓	0.50	198ms	0.698	1.000
+7e-4 / 600ep	2.021	1.341	61ms	0.50	195ms	0.701	1.000
+1e-4 / 1000ep	2.841	1.359	168ms	0.54	117ms	0.968	0.739
+
+The headline finding: LR=1e-4 at 600 epochs wins on score (0.904) with loss=1.106 — the lowest loss you've seen by a wide margin. m1 frac_crossed=0.977 is exceptional. But the m0 t_vortex (63ms) and m1 t_vortex (124ms) are both off target (105/106ms).
+
+The troubling pattern: the LR inversion is now sharper and cleaner than before, and it's not resolving with more epochs:
+
+LR=7e-4 at 1000 epochs has excellent m0 t_vortex (115ms ✓) but m1 t_vortex is getting worse with more epochs (195→198ms), not better. The m0/m1 split is widening, not closing.
+LR=1e-4 at 1000 epochs: m0 t_vortex regresses to 168ms (was 63ms at 600), m1 A collapses to 0.739, t_rise_m1=NaN. The model is un-learning something past 600 epochs. This is instability, not slow convergence.
+
+LR=1e-4 at 1000 epochs is worse than at 600 epochs on nearly every metric. That's the clearest signal in the data: there's an optimum around 600 epochs for this LR, and it degrades past that. The model is cycling or drifting in a flat basin rather than converging.
+
+The core problem that won't go away: at every LR and epoch count tried, t_vortex for m0 and m1 refuse to be simultaneously near target. When m0 t_vortex ≈ 115ms (correct), m1 t_vortex ≈ 195–200ms (nearly 2x too late). When m1 t_vortex ≈ 108–124ms (closer), m0 t_vortex ≈ 60–80ms (too early). This is not a training convergence problem — it's a capacity/architecture constraint.
+
+What this means
+
+You've hit the n_hidden=64 capacity ceiling, but in a specific way: the model can't simultaneously fit the temporal dynamics of both maturation states. The two states require different t_vortex timings (both ~105–106ms) but the model's low-rank recurrent dynamics are finding solutions where one state's timing is correct and the other's is wrong, and no amount of LR tuning or epoch extension resolves this.
+
+The D=0 / near-zero issue across nearly all configs is a related symptom — at this capacity the model can't also learn the correct vortex depth while getting timing right.
+
+This is Phase 2 territory: you need more representational capacity. The scale-up plan from OPT_README §8 says n_hidden=64→higher is the next step after confirming a capacity ceiling. You've now confirmed it.
+
+What to do next
+
+The best checkpoint you have going forward is LR=1e-4, 600 epochs (score=0.904, loss=1.106). Lock that as the operative baseline.
+
+Sweep 25 — n_hidden capacity at the new baseline
+bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.a_exo=3 --set task.tau_exo=30 \
+    --set task.t_pre=100 --set task.t_post=250 \
+    --set task.rpt_step=30 \
+    --set task.sigma_init_shared=0.3 --set task.sigma_init_private=0.05 \
+    --set task.threshold=0.40 \
+    --set train.lr=1e-4 \
+    --set train.epochs=600 \
+    --sweep model.n_hidden=64,100,128 \
+    --no-plots --top 3
+
+Pre-architecture, n_hidden=100 needed a higher LR (3e-3) to establish the race. Post-architecture, LR=1e-4 is a very different landscape — the lapse branch provides gradient even when the normal branch isn't crossing, which may make larger models viable at lower LR. Watch frac_crossed closely: if n_hidden=100/128 collapse to 0.00 with LR=1e-4, you'll need a brief LR re-check at the new size before concluding capacity helps. But given the lapse gradient path, there's genuine reason to expect larger models to be more tractable now than they were pre-architecture.
+
+The key question: does n_hidden=100 or 128 allow both m0 and m1 t_vortex to land near 105ms simultaneously? If yes, that's your Phase 2 breakthrough. If both states still split, you have a deeper architectural constraint and the mechanistic interpretation becomes the next thing to interrogate.
