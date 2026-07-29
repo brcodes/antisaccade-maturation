@@ -38,9 +38,16 @@ def run_gap_sweep(
     if gap_grid is None:
         gap_grid = np.arange(task.gap_min, task.gap_max + 1e-9, 10.0)
     gaps = torch.tensor(gap_grid, dtype=torch.float32)
-    batch = sweep_batch(task, m_value, gaps, trials_per_gap)
+    batch = sweep_batch(
+        task,
+        m_value,
+        gaps,
+        trials_per_gap,
+        n_hidden=model.model.n_hidden,
+        lapse_rate=float(model.lapse_rate(m_value)),
+    )
 
-    _, r, z = model(batch["u"], add_noise=add_noise)
+    _, r, z = model(batch["u"], h0=batch["h0"], add_noise=add_noise)
     commit = hard_commitment(z, task)
     rpt = commit["t_commit"] - batch["t_cue"]
     return {

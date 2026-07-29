@@ -43,6 +43,13 @@ class LRRNN(nn.Module):
 
         self.readout = Readout(n, model.n_output)
 
+        def _logit(p: float) -> float:
+            p = min(max(float(p), 1e-6), 1.0 - 1e-6)
+            return float(torch.log(torch.tensor(p / (1.0 - p))))
+
+        self.lapse_young_logit = nn.Parameter(torch.tensor(_logit(model.lapse_young_init)))
+        self.lapse_adult_logit = nn.Parameter(torch.tensor(_logit(model.lapse_adult_init)))
+
         if model.phi == "tanh":
             self.phi = torch.tanh
         elif model.phi == "relu":
@@ -53,6 +60,13 @@ class LRRNN(nn.Module):
     def recurrent_matrix(self) -> torch.Tensor:
         """Return the rank-R recurrent weight matrix ``W_rec`` (``[N, N]``)."""
         return (self.M @ self.N.t()) / self.model.n_hidden
+
+    def lapse_rate(self, m: torch.Tensor | float) -> torch.Tensor:
+        """Learned lapse rate λ(m) = λ_adult + (λ_young - λ_adult) * (1 - m)."""
+        m_tensor = torch.as_tensor(m, dtype=self.M.dtype, device=self.M.device)
+        lambda_young = torch.sigmoid(self.lapse_young_logit)
+        lambda_adult = torch.sigmoid(self.lapse_adult_logit)
+        return lambda_adult + (lambda_young - lambda_adult) * (1.0 - m_tensor.clamp(0.0, 1.0))
 
     def forward(
         self,
@@ -79,7 +93,7 @@ class LRRNN(nn.Module):
         dt, tau = self.task.dt, self.task.tau
         w_rec = self.recurrent_matrix()
 
-        x = torch.zeros(batch, n) if h0 is None else h0
+        x = torch.zeros(batch, n, device=u.device, dtype=u.dtype) if h0 is None else h0.to(device=u.device, dtype=u.dtype)
         noise_scale = self.task.sigma_noise * (dt / tau) ** 0.5
 
         hs, rs = [], []

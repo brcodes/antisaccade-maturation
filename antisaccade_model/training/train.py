@@ -17,7 +17,7 @@ from ..model.lrrnn import LRRNN
 from ..model.model_params import DEFAULT_MODEL, ModelParams
 from ..task.task_params import DEFAULT_TASK, TaskParams
 from ..task.tachometric_targets import target_summary_stats
-from ..task.trial_generator import build_inputs
+from ..task.trial_generator import build_inputs, sample_initial_state
 from .curriculum import sample_curriculum_gaps
 from .losses import behavioral_loss
 
@@ -47,6 +47,7 @@ def make_batch(
     task: TaskParams,
     cfg: TrainConfig,
     generator: torch.Generator,
+    n_hidden: int,
 ) -> dict:
     """Assemble a training batch using the curriculum gap schedule."""
     gaps = sample_curriculum_gaps(batch_size, epoch, task, cfg.warmup_epochs, generator)
@@ -54,7 +55,8 @@ def make_batch(
     m_pool = torch.tensor(cfg.m_choices)
     m_values = m_pool[torch.randint(0, len(m_pool), (batch_size,), generator=generator)]
     u, t_cue = build_inputs(gaps, cue_sides, m_values, task)
-    return {"u": u, "gaps": gaps, "cue_sides": cue_sides, "m": m_values, "t_cue": t_cue}
+    h0 = sample_initial_state(batch_size, n_hidden, task, generator=generator)
+    return {"u": u, "gaps": gaps, "cue_sides": cue_sides, "m": m_values, "t_cue": t_cue, "h0": h0}
 
 
 def train(
@@ -83,7 +85,7 @@ def train(
     history: list[dict] = []
     for epoch in range(cfg.epochs):
         model.train()
-        batch = make_batch(cfg.batch_size, epoch, task, cfg, generator)
+        batch = make_batch(cfg.batch_size, epoch, task, cfg, generator, model_params.n_hidden)
 
         optimizer.zero_grad()
         loss, info = behavioral_loss(model, batch, task, targets, grid)
@@ -128,6 +130,6 @@ def load_checkpoint(path: str) -> tuple[LRRNN, dict]:
     """Load a trained model and its metadata from ``path``."""
     ckpt = torch.load(path, weights_only=False)
     model = LRRNN(ckpt["model_params"], ckpt["task"])
-    model.load_state_dict(ckpt["state_dict"])
+    model.load_state_dict(ckpt["state_dict"], strict=False)
     model.eval()
     return model, ckpt

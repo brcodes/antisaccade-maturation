@@ -24,11 +24,24 @@ from .task_params import (
 )
 
 
+def sample_initial_state(
+    batch_size: int,
+    n_hidden: int,
+    task: TaskParams,
+    generator: Optional[torch.Generator] = None,
+) -> torch.Tensor:
+    """Sample the trial initial state with shared and private variability."""
+    shared = torch.randn(batch_size, 1, generator=generator) * task.sigma_init_shared
+    private = torch.randn(batch_size, n_hidden, generator=generator) * task.sigma_init_private
+    return shared + private
+
+
 def build_inputs(
     gaps: torch.Tensor,
     cue_sides: torch.Tensor,
     m_values: torch.Tensor,
     task: TaskParams,
+    lapse_mask: Optional[torch.Tensor] = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Build the input tensor for a batch of trials.
 
@@ -44,6 +57,7 @@ def build_inputs(
     """
     gaps = gaps.float()
     m_values = m_values.float()
+    lapse_mask = lapse_mask.bool() if lapse_mask is not None else None
     batch = gaps.shape[0]
     n_steps = task.n_steps
     time = torch.arange(n_steps, dtype=torch.float32) * task.dt  # ms from sim start
@@ -55,6 +69,8 @@ def build_inputs(
 
     # Task rule (antisaccade) and maturation scalar: constant across the trial.
     u[:, :, RULE_IDX] = 1.0
+    if lapse_mask is not None:
+        u[:, lapse_mask, RULE_IDX] = 0.0
     u[:, :, MATURATION_IDX] = m_values[None, :]
 
     # Cue onset per trial and time relative to it.

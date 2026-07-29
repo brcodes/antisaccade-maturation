@@ -20,5 +20,9 @@ class ModelParams:
     # Regularization weight for ||W_rec||_F^2 + mean(r^2) (gameplan Section 3.2).
     lambda_reg: float = 1e-4
 
+    # Learned lapse endpoints, initialized from the gameplan priors.
+    lapse_young_init: float = 0.08
+    lapse_adult_init: float = 0.02
+
 
 DEFAULT_MODEL = ModelParams()

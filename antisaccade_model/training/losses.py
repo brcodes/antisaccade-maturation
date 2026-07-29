@@ -19,9 +19,10 @@ D), extracted with the differentiable extractor in ``tachometric_targets``.
 from __future__ import annotations
 
 import torch
+import torch.nn.functional as F
 
-from ..task.task_params import TOWARD_GOAL_IDX, TaskParams
-from ..task.tachometric_targets import extract_summary_stats
+from ..task.task_params import RULE_IDX, TOWARD_GOAL_IDX, TaskParams
+from ..task.tachometric_targets import extract_summary_stats, params_for_m, tachometric_curve
 
 
 def soft_commitment(z: torch.Tensor, task: TaskParams) -> dict:
@@ -125,6 +126,14 @@ def soft_tachometric_curve(
     return num / den
 
 
+def rpt_weight(rpt: torch.Tensor) -> torch.Tensor:
+    """Piecewise rPT weighting that emphasizes the developmental transition."""
+    weights = torch.full_like(rpt, 0.5)
+    weights = torch.where((rpt >= 70.0) & (rpt <= 200.0), torch.full_like(weights, 3.0), weights)
+    weights = torch.where((rpt > 200.0) & (rpt <= 300.0), torch.full_like(weights, 1.0), weights)
+    return weights
+
+
 def summary_stat_loss(
     stats_model: dict,
     stats_target: dict,
@@ -165,28 +174,39 @@ def behavioral_loss(
     summary statistics (from :func:`target_summary_stats`).
     """
     extractor_kwargs = extractor_kwargs or {}
-    _, r, z = model(batch["u"], add_noise=True)
-
+    _, r, z = model(batch["u"], h0=batch.get("h0"), add_noise=True)
+    soft_commit = soft_commitment(z, task)
     commit = straight_through_commitment(z, task)
     rpt = commit["t_commit"] - batch["t_cue"]
 
+    u_lapse = batch["u"].clone()
+    u_lapse[:, :, RULE_IDX] = 0.0
+    _, _, z_lapse = model(u_lapse, h0=batch.get("h0"), add_noise=True)
+    soft_lapse = soft_commitment(z_lapse, task)
+
     beh_loss = torch.zeros(())
     per_m = {}
+    curve_loss = torch.zeros(())
     for m_value, tgt in targets.items():
         mask = (batch["m"] == m_value)
         if mask.sum() < 2:
             continue
-        tc = soft_tachometric_curve(
-            commit["p_goal"][mask], rpt[mask], grid, task.rpt_bin_width
-        )
+        lambda_m = model.lapse_rate(float(m_value))
+        p_goal_mix = (1.0 - lambda_m) * soft_commit["p_goal"][mask] + lambda_m * soft_lapse["p_goal"][mask]
+        rpt_mix = (1.0 - lambda_m) * rpt[mask] + lambda_m * (soft_lapse["t_commit"][mask] - batch["t_cue"][mask])
+        tc = soft_tachometric_curve(p_goal_mix, rpt_mix, grid, task.rpt_bin_width)
         stats = extract_summary_stats(tc, grid, **extractor_kwargs)
         beh_loss = beh_loss + summary_stat_loss(stats, tgt)
+        target_curve = tachometric_curve(rpt_mix, params_for_m(float(m_value)))
+        trial_bce = F.binary_cross_entropy(p_goal_mix, target_curve, reduction="none")
+        curve_loss = curve_loss + (rpt_weight(rpt_mix) * trial_bce).mean()
         per_m[m_value] = {"tc": tc.detach(), "stats": {k: v.detach() for k, v in stats.items()}}
 
     reg = regularization(model, r, model.model.lambda_reg)
-    total = beh_loss + reg
+    total = beh_loss + curve_loss + reg
     info = {
         "behavior": beh_loss.detach(),
+        "curve": curve_loss.detach(),
         "reg": reg.detach(),
         "total": total.detach(),
         "per_m": per_m,

@@ -18,15 +18,17 @@ import torch
 
 from ..model.lrrnn import LRRNN
 from ..task.task_params import CUE_LEFT, CUE_RIGHT, TaskParams
-from ..task.trial_generator import build_inputs
+from ..task.trial_generator import build_inputs, sample_initial_state
 from ..training.losses import hard_commitment
 
 
 @torch.no_grad()
 def _run(model, task, gaps, cue_sides, m_value, add_noise):
     m_values = torch.full((gaps.shape[0],), float(m_value))
-    u, t_cue = build_inputs(gaps, cue_sides, m_values, task)
-    _, r, z = model(u, add_noise=add_noise)
+    lapse_mask = torch.rand(gaps.shape[0]) < float(model.lapse_rate(m_value))
+    u, t_cue = build_inputs(gaps, cue_sides, m_values, task, lapse_mask=lapse_mask)
+    h0 = sample_initial_state(gaps.shape[0], model.model.n_hidden, task)
+    _, r, z = model(u, h0=h0, add_noise=add_noise)
     commit = hard_commitment(z, task)
     return r, commit["t_commit"], t_cue, commit["crossed"]
 
