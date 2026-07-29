@@ -1,4 +1,4 @@
-# code_v2_edit
+# code_v2_delta_edit_instrs
 
 Work through each item in order. For each: run the check, report the result, then follow the contingency. Do not move to the next item until the current one is resolved.
 
