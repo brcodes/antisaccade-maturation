@@ -19,25 +19,50 @@ Append one dated entry per accepted finding. Record the command, the key numbers
 | `train.batch_size` | 256 (library default) | confirmed |
 | `task.t_pre` | 50 (smoke default) | low priority; see sweep 18 note |
 | `task.t_post` | 250 | sweep 18 |
-| `task.rpt_step` | 30 (smoke default) | rpt_step=10 untested at t_post=250 — sweep 19 |
+| `task.rpt_step` | 30 | sweep 19 attempted; both 30 and 10 ended in a dead race |
+| `task.sigma_init_shared` / `task.sigma_init_private` | 0.7 / 0.05 | architecture validation; next crossing-recovery sweep |
+| `model.lapse_young_init` / `model.lapse_adult_init` | 0.08 / 0.02 | learned endpoint initializers; not yet swept |
 
 **Note on n_hidden:** The original config table listed n_hidden=100/LR=3e-3 from sweep 11, but sweep 11 was smoke-resolution only. Sweeps 14–15 showed n_hidden=100 is not viable at full resolution — no LR produces a functioning race at t_post=500. Sweep 16 explicitly fell back to n_hidden=64 and sweeps 17–18 continued there. The operative model is n_hidden=64. n_hidden=100 at smoke resolution remains a useful data point but is not the current baseline.
 
 **Note on LR:** At n_hidden=64/t_post=250 the LR was never directly tested post-sweep-18 (sweep 18 used LR=8e-3 specifically for the t_post isolation — it was chosen because it was the only survivor at t_post=500, not because it was optimal at t_post=250). LR must be re-searched at n_hidden=64/t_post=250 after architectural changes. At smoke resolution n_hidden=64 used LR=1e-3 (sweeps 7–9). At full resolution n_hidden=64 needed LR=8e-3 to hold the race at t_post=500. At t_post=250 with new architecture: unknown.
 
-**Current phase:** Architecture is now complete (lapse mechanism + stochastic initial state implemented and validated per code_v2_delta_edit_delta.md). Both were identified as required before further fitting. Loss landscape has shifted. Immediate next steps: sweep 19 (rpt_step=10 at t_post=250), then LR re-search at n_hidden=64/t_post=250 with new architecture, then t_post=500 retest.
+**Current phase:** Architecture is complete, but sweep 19 ended with a dead
+race at both rPT resolutions and at two previously viable learning rates. This
+is a Phase-0/1 recovery problem, not evidence for or against `rpt_step=10`.
+Restore healthy hard crossings before comparing bin resolution, re-searching
+learning rate, or retesting `t_post=500`.
 
 ---
 
 ## Next steps (specific, ordered)
 
-1. **Sweep 19** — confirm rpt_step=10 at t_post=250/n_hidden=64. One axis, two values. Use LR=8e-3 as the sweep 18 baseline (most recently validated at this resolution). If rpt_step=10 is stable (frac_crossed=1.00, score comparable): lock rpt_step=10. If not: keep rpt_step=30 for training, rpt_step=10 for eval only.
+1. **Sweep 20a — crossing recovery** — hold the last known viable timeline and
+grid (`n_hidden=64`, `t_post=250`, `rpt_step=30`) fixed. Sweep the new
+initial-state pair around its current setting, starting with lower total
+variance: `sigma_init_shared=0.3,0.5,0.7` and
+`sigma_init_private=0.0,0.05`. Run the paired grid at `lr=1e-3` and rank by
+`frac_crossed_*`, then score. Do not open lapse-endpoint sweeps until both
+states cross healthily.
 
-2. **Sweep 20 — LR re-search at n_hidden=64/t_post=250 with new architecture** — lapse mechanism and stochastic h0 both change gradient flow and loss geometry. The viable LR at t_post=250 pre-architecture was 1e-3 (smoke, sweeps 7–8). At t_post=500/n_hidden=64, only 8e-3 survived. The t_post=250 window is structurally easier for the race — expect viable LR to sit somewhere between 1e-3 and 8e-3. Sweep lr=1e-3,3e-3,5e-3,8e-3 at n_hidden=64/t_post=250. Use rpt_step from sweep 19.
+2. **Sweep 20b — LR re-search** — use the recovered initial-state setting,
+then sweep `lr=1e-3,3e-3,5e-3,8e-3` at `rpt_step=30`. The lapse branch and h0
+change loss geometry, so pre-architecture rankings do not transfer. Watch hard
+`frac_crossed_*` first; raw loss is only a secondary diagnostic.
 
-3. **Sweep 21 — t_post=500 retest at n_hidden=64 with new architecture** — the previous t_post=500 failures (sweeps 16–17) occurred without the lapse mechanism. The lapse branch now provides gradient even when the normal branch doesn't cross threshold, which is the structural change most likely to fix the non-learning problem. Test the winning LR from sweep 20 at t_post=500. If race establishes and loss descends: t_post=500 is viable. If not: the t_post failure is not architectural.
+3. **Sweep 20c — rPT-grid retry** — after a viable initial-state/LR pair is
+found, repeat `rpt_step=30,10`. `rpt_step=10` changes the soft-binning loss, so
+accept it only if both hard crossing fractions remain healthy and score is
+comparable at the same evaluation budget.
 
-4. **n_hidden re-evaluation** — n_hidden=100 was only tried at full resolution against t_post=500, which was already failing for architectural reasons unrelated to capacity. Once t_post=500 is viable (or confirmed permanently unviable), re-run n_hidden=100 at that resolution with the new architecture. A ceiling at n_hidden=64 may still exist for A — it was present at smoke resolution — and the lapse mechanism will not fix capacity limits.
+4. **Sweep 21 — t_post=500 retest** — use the recovered LR and rPT setting.
+The prior `t_post=500` failures predate the lapse branch, but this test is only
+meaningful once the short-window race is healthy.
+
+5. **Lapse and capacity follow-up** — after the crossing/LR/grid gates pass,
+test narrow young/adult lapse-initializer pairs, then reconsider `n_hidden=100`.
+The endpoint values are learned, so assess their behavioral effect rather than
+assuming the initialized probabilities persist.
 
 ---
 
@@ -426,7 +451,7 @@ Both architectural gaps identified at end of sweep 18 are now implemented and va
 
 ---
 
-### Sweep 19 — rpt_step=10 viability at t_post=250/n_hidden=64 (pending)
+### Original sweep 19 plan — superseded by the result below
 
 ```bash
 python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
@@ -487,3 +512,37 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
 ```
 
 The lapse branch provides gradient even when the normal branch doesn't cross threshold — this is the structural change most likely to fix the t_post=500 non-learning problem seen in sweeps 16–17. If race establishes and loss descends: t_post=500 is viable. If not: the t_post failure is not architectural — investigate whether the rPT distribution at t_post=500 overweights uninformative guessing-tail trials.
+
+---
+
+### Sweep 19 result — post-architecture rPT-grid check
+
+The planned `rpt_step=30,10` comparison was run twice at
+`n_hidden=64`, `t_post=250`, and 300 epochs. The first run used `lr=8e-3`;
+the confirmation used `lr=1e-3`. Both young and adult hard evaluation curves
+had `frac_crossed=0.00` at both grid resolutions.
+
+| learning rate | rpt_step | score | frac_crossed m0 / m1 |
+|---|---:|---:|---|
+| 8e-3 | 30 | 4.398 | 0.00 / 0.00 |
+| 8e-3 | 10 | 4.814 | 0.00 / 0.00 |
+| 1e-3 | 30 | 5.210 | 0.00 / 0.00 |
+| 1e-3 | 10 | 5.670 | 0.00 / 0.00 |
+
+**Decision:** this does not rank rPT resolutions. The new lapse and stochastic
+initial-state machinery changed the Phase-0/1 landscape, so the next task is to
+recover a live hard race at `rpt_step=30`, not to continue the planned LR or
+timeline sweeps.
+
+### Superseding trajectory
+
+1. Hold `n_hidden=64`, `t_post=250`, `rpt_step=30`, and the fixed task knobs.
+    Sweep `task.sigma_init_shared=0.3,0.5,0.7` by
+    `task.sigma_init_private=0.0,0.05` at `lr=1e-3`. Rank hard
+    `frac_crossed_*` before score.
+2. With a recovered initial-state pair, re-search
+    `train.lr=1e-3,3e-3,5e-3,8e-3`. Keep lapse endpoint initializers fixed.
+3. Retry `rpt_step=30,10` only after both endpoint states cross healthily;
+    this is a loss change, not an evaluation-only change.
+4. Retest `t_post=500` with the recovered LR/grid pair. Sweep learned-lapse
+    endpoint initializers and revisit capacity only after these gates pass.

@@ -5,9 +5,16 @@ Targets (ground truth, confirmed correct from sweep 2 onward):
 - adult: A=0.97, t_rise=140ms, t_vortex=106ms, D=0.27
 - score = weighted behavioral MSE + crossing penalty; lower is better; always read alongside frac_crossed
 
-**Architectural status:** Both identified gaps are now implemented and validated (lapse mechanism via branch mixture λ(m), stochastic h0 via shared+private factorization). See architectural changes section (after sweep 18) for validation details and parameters. Loss landscape altered; LR/rpt_step re-search required in sweeps 19–20.
+**Architectural status:** Both identified gaps are implemented and validated:
+lapse branch mixture λ(m), and stochastic h0 via shared+private factorization.
+The newly sweepable controls are `task.sigma_init_shared`,
+`task.sigma_init_private`, `model.lapse_young_init`, and
+`model.lapse_adult_init`. Initial lapse values are priors for learned endpoints,
+not fixed probabilities. The architecture changed the loss landscape.
 
-**rpt_step note:** affects the training objective (soft-binning in losses.py), not just evaluation. Changing it changes what the model trains against.
+**rpt_step note:** affects the soft-binning training objective, not just
+evaluation. `eval.trials_per_gap` improves hard-evaluation precision only;
+changing `rpt_step` or `rpt_bin_width` requires another crossing/LR check.
 
 **t_pre note:** pre-cue attractor establishment window. Low-priority variable — matters only if RNN hasn't converged to baseline within 50ms of simulation time. Likely fast at n_hidden=64.
 
@@ -247,7 +254,7 @@ Both architectural gaps identified as required before further fitting are now im
 
 **Status:** Architecture (lapse mechanism + stochastic h0) now implemented and validated. Loss landscape altered — LR and rpt_step must be re-confirmed post-architecture.
 
-**Immediate next sweeps (19–21, all post-architecture):**
+**Original next-sweep plan (superseded by the sweep-19 result below):**
 
 **Sweep 19** — rpt_step viability at t_post=250/n_hidden=64:
 ```bash
@@ -279,3 +286,34 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --set train.lr=[from sweep 20] --set task.t_post=500 --no-plots
 ```
 Lapse branch now provides gradient when normal branch doesn't cross — likely fixes t_post=500 non-learning. If stable and loss descends: t_post=500 viable. If not: investigate rPT distribution.
+
+---
+
+## Sweep 19 result and superseding trajectory
+
+**Sweep 19 result:** the planned `rpt_step=30,10` comparison is invalid as a
+resolution ranking. At `n_hidden=64`, `t_post=250`, and 300 epochs, both hard
+endpoint curves had `frac_crossed=0.00` at both grid sizes under both tested
+learning rates:
+
+| lr | rpt_step | score | frac_crossed m0/m1 |
+|---|---:|---:|---|
+| 8e-3 | 30 | 4.398 | 0.00 / 0.00 |
+| 8e-3 | 10 | 4.814 | 0.00 / 0.00 |
+| 1e-3 | 30 | 5.210 | 0.00 / 0.00 |
+| 1e-3 | 10 | 5.670 | 0.00 / 0.00 |
+
+The post-architecture issue is Phase 0/1 recovery, not rPT resolution. The
+soft loss is not a substitute for hard `frac_crossed` here.
+
+**Next sweep 20a — recover a live hard race:** hold
+`n_hidden=64`, `t_post=250`, `rpt_step=30`, and fixed task knobs. At `lr=1e-3`,
+sweep `task.sigma_init_shared=0.3,0.5,0.7` and
+`task.sigma_init_private=0.0,0.05`; rank by `frac_crossed_*` before score.
+Keep lapse endpoint initializers fixed.
+
+**Then 20b:** re-search `lr=1e-3,3e-3,5e-3,8e-3` with the recovered initial
+state pair. **Then 20c:** retry `rpt_step=30,10`; accept 10 only if both states
+retain healthy hard crossings. **Then sweep 21:** retest `t_post=500` with the
+recovered LR/grid pair. Lapse prior sweeps and n_hidden re-evaluation follow
+only after these gates pass.
