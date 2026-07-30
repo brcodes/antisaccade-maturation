@@ -43,6 +43,26 @@ class TrainConfig:
     device: str = "cpu"  # CPU only
 
 
+def _log_plateau_reduction(
+    epoch: int,
+    scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau,
+    old_lrs: list[float],
+    new_lrs: list[float],
+    metric: float,
+) -> None:
+    """Print a detailed scheduler reduction event for terminal and log capture."""
+    print(
+        f"lr reduced at epoch {epoch:4d} | metric {metric:.6f} | "
+        f"mode={scheduler.mode} | threshold={scheduler.threshold:g} | "
+        f"threshold_mode={scheduler.threshold_mode} | patience={scheduler.patience} | "
+        f"factor={scheduler.factor:g} | cooldown={scheduler.cooldown} | "
+        f"best={scheduler.best:.6f} | num_bad_epochs={scheduler.num_bad_epochs} | "
+        f"cooldown_counter={scheduler.cooldown_counter} | last_epoch={scheduler.last_epoch} | "
+        f"min_lr={scheduler.min_lrs} | eps={scheduler.eps:g} | "
+        f"old_lr={old_lrs} | new_lr={new_lrs}"
+    )
+
+
 def make_batch(
     batch_size: int,
     epoch: int = 0,
@@ -96,7 +116,11 @@ def train(
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
         optimizer.step()
+        old_lrs = [group["lr"] for group in optimizer.param_groups]
         scheduler.step(info["total"])
+        new_lrs = [group["lr"] for group in optimizer.param_groups]
+        if new_lrs != old_lrs:
+            _log_plateau_reduction(epoch, scheduler, old_lrs, new_lrs, float(info["total"]))
 
         record = {"epoch": epoch, "loss": float(info["total"]),
                   "curve": float(info["curve"]), "reg": float(info["reg"]),

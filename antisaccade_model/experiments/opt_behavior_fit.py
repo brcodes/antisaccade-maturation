@@ -48,6 +48,7 @@ import json
 import logging
 import math
 import os
+import sys
 from dataclasses import dataclass, fields
 from datetime import datetime
 from typing import Any
@@ -87,11 +88,12 @@ PRESETS: dict[str, dict[str, Any]] = {
     # crossing threshold? Trim dead time and shrink everything.
     "smoke": {
         "model.n_hidden": 64,
-        "task.t_pre": 50.0,
-        "task.t_post": 250.0,
-        "task.gap_max": 180.0,
-        "task.rpt_max": 240.0,
-        "task.rpt_step": 30.0,
+        "task.t_pre": 100.0,
+        "task.t_post": 500.0,
+        "task.gap_max": 350.0,
+        "task.rpt_max": 350.0,
+        "task.rpt_step": 10.0,
+        "task.rpt_bin_width": 20.0,
         "train.epochs": 50,
         "train.batch_size": 64,
         "train.warmup_epochs": 10,
@@ -104,15 +106,17 @@ PRESETS: dict[str, dict[str, Any]] = {
         "task.t_pre": 100.0,
         "task.t_post": 500.0,
         "task.gap_max": 350.0,
-        "task.rpt_max": 300.0,
+        "task.rpt_max": 350.0,
         "task.rpt_step": 10.0,
+        "task.rpt_bin_width": 20.0,
         "train.epochs": 1000,
         "train.batch_size": 256,
-        "train.warmup_epochs": 100,
-        "train.log_every": 50,
+        "train.warmup_epochs": 10,
+        "train.log_every": 10,
         "eval.trials_per_gap": 200,
     },
 }
+
 
 # Explicit CLI flags -> dotted config keys.
 FLAG_TO_KEY = {
@@ -128,6 +132,8 @@ FLAG_TO_KEY = {
     "warmup": "train.warmup_epochs",
     "seed": "train.seed",
     "log_every": "train.log_every",
+    "plateau_patience": "train.plateau_patience",
+    "plateau_factor": "train.plateau_factor",
     "threshold": "task.threshold",
     "sigma_noise": "task.sigma_noise",
     "a_exo": "task.a_exo",
@@ -436,6 +442,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--warmup", type=int)
     p.add_argument("--seed", type=int)
     p.add_argument("--log-every", dest="log_every", type=int)
+    p.add_argument("--plateau-patience", dest="plateau_patience", type=int)
+    p.add_argument("--plateau-factor", dest="plateau_factor", type=float)
     p.add_argument("--threshold", type=float)
     p.add_argument("--sigma-noise", dest="sigma_noise", type=float)
     p.add_argument("--a-exo", dest="a_exo", type=float)
@@ -476,6 +484,19 @@ def main(argv: list[str] | None = None) -> None:
         with tee_run_output(os.path.join(out_dir, "log.txt")):
             configs = build_configs(args)
             logger.info("Preset=%s  output=%s", args.preset, out_dir)
+            logger.info("argv=%s", sys.argv)
+            logger.info("raw --set items=%s", args.set)
+            logger.info(
+                "Resolved train plateau settings: patience=%s factor=%s threshold=%s threshold_mode=%s mode=%s cooldown=%s min_lr=%s eps=%s",
+                configs["train"].plateau_patience,
+                configs["train"].plateau_factor,
+                1e-4,
+                "rel",
+                "min",
+                0,
+                0.0,
+                1e-8,
+            )
             metrics = run_single(configs, out_dir, make_plots=args.plots)
             logger.info("score=%.4f  final_loss=%s", metrics["score"], _fmt(metrics.get("final_train_loss")))
             for m in configs["eval"].m_values:
