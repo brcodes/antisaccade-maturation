@@ -291,6 +291,8 @@ def run_single(configs: dict, out_dir: str, make_plots: bool = True) -> dict:
     train_cfg, eval_cfg = configs["train"], configs["eval"]
     train_cfg.checkpoint_path = os.path.join(out_dir, "model.pt")
 
+    _log_resolved_configs(configs)
+
     model, history = train(train_cfg, model_p, task)
     metrics = compute_metrics(model, task, eval_cfg)
     metrics["final_train_loss"] = float(history[-1]["loss"]) if history else float("nan")
@@ -408,6 +410,27 @@ def _fmt(value: Any) -> str:
     return f"{value:.4f}" if isinstance(value, float) else str(value)
 
 
+def _format_config_value(value: Any) -> str:
+    if isinstance(value, str):
+        return repr(value)
+    if isinstance(value, tuple):
+        return "[" + ",".join(_format_config_value(item) for item in value) + "]"
+    if isinstance(value, list):
+        return "[" + ",".join(_format_config_value(item) for item in value) + "]"
+    if isinstance(value, dict):
+        parts = [f"{key!r}: {_format_config_value(val)}" for key, val in value.items()]
+        return "{" + ", ".join(parts) + "}"
+    return repr(value)
+
+
+def _log_resolved_configs(configs: dict) -> None:
+    logger.info("Resolved full params:")
+    for prefix in ("eval", "model", "task", "train"):
+        obj = configs[prefix]
+        for field in fields(obj):
+            logger.info("%s.%s=%s", prefix, field.name, _format_config_value(getattr(obj, field.name)))
+
+
 def _config_dump(configs: dict) -> dict:
     dump = {}
     for prefix, obj in configs.items():
@@ -486,17 +509,6 @@ def main(argv: list[str] | None = None) -> None:
             logger.info("Preset=%s  output=%s", args.preset, out_dir)
             logger.info("argv=%s", sys.argv)
             logger.info("raw --set items=%s", args.set)
-            logger.info(
-                "Resolved train plateau settings: patience=%s factor=%s threshold=%s threshold_mode=%s mode=%s cooldown=%s min_lr=%s eps=%s",
-                configs["train"].plateau_patience,
-                configs["train"].plateau_factor,
-                1e-4,
-                "rel",
-                "min",
-                0,
-                0.0,
-                1e-8,
-            )
             metrics = run_single(configs, out_dir, make_plots=args.plots)
             logger.info("score=%.4f  final_loss=%s", metrics["score"], _fmt(metrics.get("final_train_loss")))
             for m in configs["eval"].m_values:

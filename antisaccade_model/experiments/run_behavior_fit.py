@@ -32,8 +32,29 @@ from ..visualization.plot_geometry import plot_mode_activations
 from ..visualization.plot_si import plot_si_heatmap
 from ..visualization.plot_tc import plot_tachometric
 from ._logging import tee_run_output
+from .opt_behavior_fit import EvalConfig
 
 OUT_DIR = "results/behavior_fit"
+
+
+def _format_config_value(value):
+    if isinstance(value, str):
+        return repr(value)
+    if isinstance(value, tuple):
+        return "[" + ",".join(_format_config_value(item) for item in value) + "]"
+    if isinstance(value, list):
+        return "[" + ",".join(_format_config_value(item) for item in value) + "]"
+    if isinstance(value, dict):
+        parts = [f"{key!r}: {_format_config_value(val)}" for key, val in value.items()]
+        return "{" + ", ".join(parts) + "}"
+    return repr(value)
+
+
+def _log_resolved_configs(eval_cfg, model_params, task, train_cfg) -> None:
+    print("Resolved full params:")
+    for prefix, obj in (("eval", eval_cfg), ("model", model_params), ("task", task), ("train", train_cfg)):
+        for field_name in obj.__dataclass_fields__:
+            print(f"{prefix}.{field_name}={_format_config_value(getattr(obj, field_name))}")
 
 
 def _print_stats_table(model, task) -> None:
@@ -57,6 +78,7 @@ def main(epochs: int = 1000, retrain: bool = True) -> None:
         ckpt_path = "checkpoints/behavior_fit.pt"
         if retrain or not os.path.exists(ckpt_path):
             cfg = TrainConfig(epochs=epochs, checkpoint_path=ckpt_path)
+            _log_resolved_configs(EvalConfig(), model_params, task, cfg)
             model, _ = train(cfg, model_params, task)
         else:
             model, _ = load_checkpoint(ckpt_path)

@@ -53,7 +53,7 @@ class TaskParams:
     cue_sustained: float = 1.0  # sustained cue drive after onset
 
     # race-to-threshold decision
-    threshold: float = 1.0      # commitment threshold theta on max output
+    threshold: float = 0.4      # commitment threshold theta on max output
     commit_temp: float = 0.2    # steepness of the soft (backward) threshold crossing
     option_temp: float = 0.2    # softmax temperature for the soft decision proxy
 
@@ -61,14 +61,14 @@ class TaskParams:
     sigma_noise: float = 0.1
 
     # Trial-to-trial initial-state variability shared across or private to units.
-    sigma_init_shared: float = 0.7
+    sigma_init_shared: float = 0.3
     sigma_init_private: float = 0.05
 
     # analysis rPT grid
     rpt_min: float = 0.0
-    rpt_max: float = 300.0
+    rpt_max: float = 350.0
     rpt_step: float = 10.0
-    rpt_bin_width: float = 12.0  # ms; kernel width for soft rPT binning in training
+    rpt_bin_width: float = 20.0  # ms; kernel width for soft rPT binning in training - from Zhu
 
     @property
     def n_steps(self) -> int:

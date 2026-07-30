@@ -31,13 +31,13 @@ class TrainConfig:
     batch_size: int = 256
     lr: float = 1e-3
     grad_clip: float = 1.0
-    warmup_epochs: int = 100
+    warmup_epochs: int = 10
     resume_checkpoint: str | None = None
     m_choices: tuple[float, ...] = (0.0, 1.0)
-    log_every: int = 50
-    hard_eval_trials_per_gap: int = 10
-    plateau_patience: int = 50
-    plateau_factor: float = 0.5
+    log_every: int = 10
+    hard_eval_trials_per_gap: int = 100
+    plateau_patience: int = 99999
+    plateau_factor: float = 0.99999
     seed: int = 0
     checkpoint_path: str = "checkpoints/behavior_fit.pt"
     device: str = "cpu"  # CPU only
@@ -116,6 +116,7 @@ def train(
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
         optimizer.step()
+
         old_lrs = [group["lr"] for group in optimizer.param_groups]
         scheduler.step(info["total"])
         new_lrs = [group["lr"] for group in optimizer.param_groups]
