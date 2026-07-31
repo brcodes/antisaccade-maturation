@@ -819,13 +819,13 @@ Final metrics despite collapsed frac_crossed:
 - Score inflated by massive crossing penalty (5 × max(0, 0.4 - 0.062) ≈ 1.69 per state)
 - Degenerate solution: correct curve shape from tiny fraction of trials
 
-**Interpretation:** two separable problems now visible:
-1. Run 32 (no stratification): correct A, stable race, timing too late, shallow D
-2. Run 34 (stratification): correct D, timing close, but dead race
+**Interpretation:** two phases within Run 34 are now visible:
+1. Early/healthy window: stable crossing, timing still too late, shallow D
+2. Late/collapsed window: correct D/timing signal emerges, but `frac_crossed` falls to 6–9%
 
-Gap stratification fixed the D/t_vortex problem but amplified the lapse-gradient-vs-race-health tension. Crossing penalty weight (5×) insufficient to prevent optimizer from trading race health for curve shape over long training.
+Gap stratification fixed the D/t_vortex problem but amplified the lapse-gradient-vs-race-health tension. Crossing penalty weight (5×) is insufficient to prevent optimizer from trading race health for curve shape over long training.
 
-**Discussion:** Salinas-inspired gap strata (boundaries at 0,75,100,125,150,175,200,250,350ms) discussed as more biologically grounded alternative to equal-width bins — denser sampling in vortex-producing gap range (75-200ms) matching experimental design. Next run: resume Run 32 checkpoint with lr=1e-5.
+**Discussion:** Salinas-inspired gap strata (boundaries at 0,75,100,125,150,175,200,250,350ms) discussed as more biologically grounded alternative to equal-width bins — denser sampling in vortex-producing gap range (75-200ms) matching experimental design. Next run: continue stratified-only search from the best available stratified checkpoint with lr=1e-5; no non-stratified solutions will be sought at this point.
 
 ---
 
@@ -833,7 +833,7 @@ Gap stratification fixed the D/t_vortex problem but amplified the lapse-gradient
 
 | field | value | source |
 |---|---|---|
-| `model.n_hidden` | 200 | Run 32 |
+| `model.n_hidden` | 200 | Run 34 |
 | `model.n_rank` | 2 | Locked (architectural) |
 | `task.threshold` | 0.40 | Sweep 22 |
 | `task.a_exo` | 3.0 | Sweep 3 |
@@ -848,13 +848,13 @@ Gap stratification fixed the D/t_vortex problem but amplified the lapse-gradient
 | `task.sigma_init_private` | 0.05 | Sweep 20 |
 | `task.sigma_noise` | 0.1 | Default; not yet swept |
 | `task.commit_temp` | 0.2 | Default; Phase 3 knob |
-| `train.lr` | 3e-5 | Run 32 |
-| `train.batch_size` | 200 | Run 32 |
-| `train.epochs` | 200 (good basin)  Run 32 |
-| `train.hard_eval_trials_per_gap` | 50 | Run 32 |
+| `train.lr` | 3e-5 | Run 34 |
+| `train.batch_size` | 200 | Run 34 |
+| `train.epochs` | pending stratified viable run | pending |
+| `train.hard_eval_trials_per_gap` | 50 | Run 34 |
 | `train.plateau_patience` | 99999 | Run 31 (disable scheduler) |
 | `train.plateau_factor` | 0.99999 | Run 31 (disable scheduler) |
-| `eval.trials_per_gap` | 200 | Run 32 |
+| `eval.trials_per_gap` | 200 | Run 34 |
 | `model.lapse_young_init` | 0.08 | Salinas 2019 + Zhu 2024 inference |
 | `model.lapse_adult_init` | 0.02 | Salinas 2019 |
 
@@ -864,7 +864,7 @@ Gap stratification fixed the D/t_vortex problem but amplified the lapse-gradient
 
 ## Considerations moving forward
 
-1. **The gradient-bearing loss explicitly upweights the vortex/recovery region.** Per-trial BCE is weighted `3.0` for emergent rPTs from 70–200 ms, `1.0` for >200–300 ms, and `0.5` elsewhere. Run 34 therefore reflects the combined effect of balanced five-stratum gap coverage and an already vortex-heavy optimization objective. Before making sampling denser in the same region, **COULD** reduce/rebalance the explicit rPT weights to try and preserve Run 32's race health while retaining Run 34's gains in `D` and timing.
+1. **The gradient-bearing loss explicitly upweights the vortex/recovery region.** Per-trial BCE is weighted `3.0` for emergent rPTs from 70–200 ms, `1.0` for >200–300 ms, and `0.5` elsewhere. Run 34 therefore reflects the combined effect of balanced five-stratum gap coverage and an already vortex-heavy optimization objective. Before making sampling denser in the same region, **COULD** reduce/rebalance the explicit rPT weights to try and preserve Run 34's early-window race health while retaining its gains in `D` and timing.
 2. **Current five-stratum gap sampling controls finite-batch coverage; it is not itself a vortex-specific weighting scheme.** The current sampler draws equal counts from five equal-width gap intervals over 0–350 ms and samples uniformly within each interval. Salinas-inspired nonuniform boundaries would be a distinct experimental-sampling choice that further concentrates coverage around vortex-producing gaps.
 3. **The existing no-crossing penalty cannot prevent training collapse.** The `5 * max(0, 0.4 - frac_crossed)` term is applied only to post-training evaluation/ranking and supplies no gradient to Adam. Increasing it would demote collapsed runs but would not change their training trajectory. **COULD** require a minimum `frac_crossed` gate for checkpoint eligibility, and select the best viable checkpoint rather than the lowest BCE or final epoch (but this seems hacky right now). If collapse remains common, **COULD** add a differentiable race-health or survival-mass term to the training objective.
-4. **Phase 3 biological tuning follows a stable viable fit.** Once both maturation states retain healthy `frac_crossed`, can tune parameters such as `tau_exo` (timing) and `commit_temp` (recovery sharpness). Consider `n_hidden=256` only after the `n_hidden=200` configuration remains stable under the hard behavioral gate.
+4. **Phase 3 biological tuning follows a stable viable fit.** Once both maturation states retain healthy `frac_crossed`, can tune parameters such as `tau_exo` (timing) and `commit_temp` (recovery sharpness). Consider `n_hidden=256` only after the `n_hidden=200` configuration remains stable under the hard behavioral gate. The active search path is stratified-only; non-stratified solutions are not on the table.

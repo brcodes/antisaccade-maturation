@@ -335,20 +335,20 @@ remain in [opt_progress.md](opt_progress.md).
 The current full-scale comparison exposes a tension between behavioral shape
 and race health:
 
-- **Run 32 is the best viable operating point.** At `n_hidden=200`, `lr=3e-5`,
-  and 200 epochs, it maintains healthy crossing fractions, reproduces the
-  maturation-dependent asymptotes, and produces genuine below-chance vortex
-  depth. Its vortex and rise timing remain late and its fitted `D` values are
-  too shallow.
-- **Run 34 is the strongest vortex-shape diagnostic, not a viable fit.**
+- **Run 34 is the current frontier diagnostic, but not yet a viable fit.**
   Five-stratum gap sampling produces the closest `D` values so far and moves
   vortex/rise timing through the target region, but prolonged training
   collapses `frac_crossed` to 6–9%. The resulting curve is estimated from a
   small, selected subset of crossing trials and is behaviorally degenerate.
+- **No non-stratified solution is being sought at this point.** The remaining
+  search is stratified-only: the goal is the first checkpoint that keeps race
+  health while preserving the timing and depth signal Run 34 shows is
+  reachable.
 
-Together these runs show that sufficient vortex-region gradient signal exists,
-but the current surrogate objective can improve curve shape while sacrificing
-the threshold-crossing race. The immediate optimization problem is therefore
-to retain Run 32's race health while recovering the timing and depth signal
+Together these runs show that stratified sampling exposes the relevant
+vortex-region gradient signal, but the current surrogate objective can still
+improve curve shape while sacrificing the threshold-crossing race. The
+immediate optimization problem is therefore to establish and retain race health
+within stratified training while recovering the timing and depth signal
 revealed by Run 34. Hard checkpoint selection must treat `frac_crossed` as a
 viability constraint, not merely another score component.
