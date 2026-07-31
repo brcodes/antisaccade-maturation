@@ -8,7 +8,7 @@ adult monkeys) and then used to **predict** the FEF/dlPFC spatial signal
 Reference: Zhu, Zhou, Constantinidis, Salinas & Stanford (2024), *iScience*
 27(8):110488. Architecture follows Mastrogiuseppe & Ostojic (2018).
 
-See [`antisaccade_maturation_modeling_gameplan.md`](antisaccade_maturation_modeling_gameplan.md)
+See [`antisaccade_maturation_modeling_gameplan_v2.md`](antisaccade_maturation_modeling_gameplan_v2.md)
 for the full scientific and implementation plan.
 
 ## Fixed design choices
@@ -20,10 +20,17 @@ for the full scientific and implementation plan.
 | Maturation conditioning | Mechanism 1 (m as a constant input channel) |
 | Non-differentiable decision | Straight-through estimator (hard forward / soft backward) |
 | rPT | Emergent: gap imposed, threshold crossing sets `t_commit`, `rPT = t_commit − t_cue` |
-| Behavioral objective | Summary-statistic loss on (t_rise, A, t_vortex, D) |
+| Behavioral objective | rPT-weighted BCE against target tachometric curves; hard summary statistics for evaluation |
 | Training maturation states | Discrete m ∈ {0, 1} |
 | Cross-prediction | Direction 1 (fit behavior → predict SI) |
 | Compute | CPU only |
+
+Training mixes a normal antisaccade branch with a rule- and
+maturation-ablated lapse branch using learned young/adult lapse endpoints.
+Shared and private stochastic initial-state components provide trial-level RT
+variability. The differentiable BCE objective trains this mixture, while hard
+threshold crossings, empirical tachometric curves, and `frac_crossed` determine
+whether behavior is scientifically viable.
 
 ## Repository layout
 
@@ -53,7 +60,7 @@ pip install -r antisaccade_model/requirements.txt
 Dependencies: `torch`, `numpy`, `scipy`, `matplotlib`, `scikit-learn`, `tqdm`.
 
 > All commands below are run **from the workspace root**
-> (`/Users/brycerogers/Documents/antisaccade_maturation/`) and invoke the
+> (`/Users/brycerogers/Documents/antisaccade-maturation/`) and invoke the
 > package with `python -m ...` so that the relative imports resolve.
 
 ## 2. Sanity check (optional)
@@ -91,6 +98,11 @@ call `main(epochs=..., retrain=False)` from a Python session:
 ```bash
 python -c "from antisaccade_model.experiments.run_behavior_fit import main; main(epochs=2000)"
 ```
+
+`run_behavior_fit.py` constructs `DEFAULT_TASK`, `DEFAULT_MODEL`, and a fresh
+`TrainConfig`; it does not load an optimization-harness `config.json`.
+Reproducing a promoted optimizer run therefore requires transferring its
+resolved values into the canonical runner or adding config-loading support.
 
 ## 4. Ablation analyses
 

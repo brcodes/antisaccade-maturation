@@ -10,36 +10,15 @@ Append one dated entry per accepted finding. Record the command, the key numbers
 
 ## Current best config (living)
 
-| field | value | source |
-|---|---|---|
-| `task.threshold` | **0.40** | sweep 22 — post-architecture cliff mapping |
-| `task.a_exo` | 3.0 | sweep 3 |
-| `task.tau_exo` | 30.0 | sweep 4 (confirmed = library default) |
-| `model.n_hidden` | **pending sweep 25** | sweep 24 confirmed n_hidden=64 capacity ceiling |
-| `train.lr` | **1e-4** | sweep 24 winner |
-| `train.epochs` | **600** | sweep 24 winner |
-| `train.batch_size` | 256 | library default confirmed |
-| `task.t_pre` | 100 | set explicitly since sweep 13 |
-| `task.t_post` | 250 | sweep 18 — viable training window |
-| `task.rpt_step` | 30 | sweep 19 — rpt_step=10 not yet retested post-architecture |
-| `task.sigma_init_shared` / `task.sigma_init_private` | 0.3 / 0.05 | sweep 20 winner |
-| `model.lapse_young_init` / `model.lapse_adult_init` | 0.08 / 0.02 | architecture defaults; not yet swept |
+See updated table at bottom of document under "Current best config (updated)". Best run: Run 34 (2026-07-30 last run).
 
-**Note on threshold:** θ=0.40 is meaningfully lower than the pre-architecture optimum (0.75). This is an engineering consequence of the lapse branch suppressing readout gain, not a scientific claim about the biological decision bound. θ is a detection threshold on the model's output activations, not the accumulator bound height. The biological quantities of interest (t_rise, t_vortex, A, D, SI signal shape) are what validate the model, not the θ value itself. See threshold scientific note under sweep 21.
-
-**Note on n_hidden:** sweep 24 confirmed n_hidden=64 cannot simultaneously fit m0 and m1 t_vortex timing — a clean capacity ceiling. Sweep 25 probes n_hidden=100/128 at the new LR/epoch baseline. Pre-architecture n_hidden=100 at smoke resolution (sweep 11) achieved score=0.132 at LR=3e-3; post-architecture LR landscape is different and must be re-confirmed if frac_crossed collapses.
-
-**Current phase:** Phase 2 — capacity scale-up. Phase-0 gate re-established at θ=0.40 (sweep 22). LR and epoch baseline confirmed (sweeps 23–24). n_hidden=64 ceiling confirmed (sweep 24). Sweep 25 in progress.
+**Current phase:** Phase 2/3 boundary. Gap stratification (Run 34) proved vortex gradient signal is the lever for D/t_vortex but degrades frac_crossed over long training. 
 
 ---
 
 ## Next steps (specific, ordered)
 
-1. **Sweep 25 — n_hidden capacity** — in progress. n_hidden=100 and 128 at lr=1e-4, epochs=600. Ghost: n_hidden=64 (sweep 24, score=0.904). If new sizes collapse → LR re-check at that size before concluding capacity doesn't help.
-2. **LR re-check at new n_hidden** — if sweep 25 shows frac_crossed collapse, sweep lr=5e-4,1e-4,1e-3 at the viable size.
-3. **rpt_step retry** — after stable n_hidden/LR locked, test rpt_step=10. This changes the soft-binning training objective; re-confirm frac_crossed after.
-4. **t_post=500 retest** — only after rpt_step confirmed. Lapse branch may now provide gradient where pure normal branch couldn't.
-5. **Lapse endpoint sweep** — narrow pairs around (0.08, 0.02); after the above gates pass.
+See updated next steps at bottom of document.
 
 ---
 
@@ -519,7 +498,7 @@ Key findings:
 
 ---
 
-### Sweep 25 — n_hidden capacity (in progress)
+### Sweep 25 — n_hidden capacity
 
 ```bash
 # Ghost point: n_hidden=64
@@ -537,6 +516,355 @@ python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
     --no-plots --top 2
 ```
 
-Key question: does either size allow both m0 and m1 t_vortex to land near 105ms simultaneously? If yes: Phase 2 breakthrough. If frac_crossed collapses → LR re-check at that size before concluding capacity doesn't help. Lapse branch now provides gradient through dead-race episodes, so the pre-architecture pattern (n_hidden>64 requiring higher LR) may not hold here.
 
-*Results pending.*
+Key question: does either size allow both m0 and m1 t_vortex to land near 105ms simultaneously?
+
+| n_hidden | score | loss | frac_crossed m0/m1 | m0 t_vortex | m1 t_vortex | D_m0/m1 | verdict |
+|---|---|---|---|---|---|---|---|
+| 100 | 1.144 | 1.492 | 0.71 / 0.93 | 82ms | 82ms | ≈0 / ≈0 | alive, m0/m1 collapsed to identical |
+| 128 | 5.015 | 3.309 | 0.01 / 0.02 | 195ms | 141ms | ≈0 / 0.306 | Phase-0 failure — dead |
+
+n_hidden=100: Phase-0 gate passed (best frac_crossed seen post-architecture) but m0/m1 t_vortex collapsed to identical 82ms — maturation states not differentiated. n_hidden=128: hard Phase-0 failure, frac_crossed ≈0 throughout training.
+
+**Conclusion:** n_hidden=100 is alive but shows m-collapse; n_hidden=128 is Phase-0 dead at θ=0.40. LR re-check at n_hidden=100 next.
+
+---
+
+### Sweep 26 — LR re-check at n_hidden=100
+
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.a_exo=3 --set task.tau_exo=30 \
+    --set task.t_pre=100 --set task.t_post=250 --set task.rpt_step=30 \
+    --set task.sigma_init_shared=0.3 --set task.sigma_init_private=0.05 \
+    --set task.threshold=0.40 \
+    --set model.n_hidden=100 \
+    --set train.epochs=600 \
+    --sweep train.lr=3e-4,5e-4,7e-4 \
+    --no-plots --top 3
+```
+
+| LR | score | frac_crossed m0/m1 | m0 t_vortex | m1 t_vortex | pattern |
+|---|---|---|---|---|---|
+| 3e-4 | 4.50 | 0.24 / 0.16 | 200ms | 200ms | Phase-0 collapse during training |
+| 5e-4 | 3.99 | 0.04 / 0.03 | 139ms | 126ms | fast Phase-0 collapse |
+| 7e-4 | 5.14 | 0.01 / 0.004 | 197ms | 127ms | fastest collapse |
+
+All three start healthy (crossed=1.00 epoch 0) then training kills the race. LR hypothesis falsified — this is active destabilization during training, not wrong LR basin. Lapse branch gradient suppressing readout gain mid-training at all LRs > 1e-4. LR=1e-4 (sweep 25) survived only by staying near initialization — too slow to differentiate m states.
+
+**Conclusion:** LR is not the lever at n_hidden=100. θ re-evaluation next.
+
+---
+
+### Sweep 27 — θ re-evaluation at n_hidden=100
+
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.a_exo=3 --set task.tau_exo=30 \
+    --set task.t_pre=100 --set task.t_post=250 --set task.rpt_step=30 \
+    --set task.sigma_init_shared=0.3 --set task.sigma_init_private=0.05 \
+    --set model.n_hidden=100 \
+    --set train.epochs=600 \
+    --sweep task.threshold=0.25,0.30,0.35 \
+    --sweep train.lr=1e-4,3e-4 \
+    --no-plots --top 6
+```
+
+| θ / LR | score | frac_crossed m0/m1 | m0 t_vortex | m1 t_vortex | D | pattern |
+|---|---|---|---|---|---|---|
+| 0.25 / 1e-4 | 1.200 | 0.97 / 0.99 | 80ms | 80ms | ≈0/≈0 | A=1.0, early-commit degenerate |
+| 0.25 / 3e-4 | 1.189 | 0.97 / 0.96 | 80ms | 80ms | ≈0/≈0 | same |
+| 0.30 / 1e-4 | 1.144 | 0.94 / 0.98 | 82ms | 82ms | ≈0/≈0 | same |
+| 0.30 / 3e-4 | 1.242 | 0.93 / 0.93 | 80ms | 74ms | ≈0/≈0 | slight split |
+
+Uniform failure mode: A≈1.0, D≈0, t_vortex ~80ms for both states — model over-commits extremely early. At θ≤0.35 with n_hidden=100 the race crosses threshold before exogenous signal can act. Sweep stopped early (4/6 runs) — θ=0.35 points would not reverse trend.
+
+**Conclusion:** n_hidden=100 has no viable operating window — too high θ kills frac_crossed (sweep 26), too low θ causes early-commit degenerate solution. init_rec_scale investigated as potential lever.
+
+---
+
+### Diagnostic — W_in column norms and init_rec_scale wiring
+
+W_in column norms inspected across three checkpoints (init_rec_scale=0.01, 0.03, 0.1):
+
+```
+maturation_state: 1.417  (vs go_signal: 1.422, antisaccade_rule: 1.491)
+```
+
+- m-input weight is healthy and competitive — not zeroed, not regularized away. Other model's "W_in near zero" hypothesis falsified.
+- init_rec_scale sweep (0.01, 0.03, 0.1) produced **identical** W_in, readout, and lapse logit norms across all three checkpoints. Only M and N (low-rank factors) differed slightly.
+- **Finding:** in rank-2 LR-RNN, init_rec_scale only affects M and N initialization. With LR=1e-4 over 600 epochs, gradient signal dominates initialization — M/N converge to same place regardless of starting scale. init_rec_scale is a dead knob at these training settings. This is correct behavior for the architecture, not a bug.
+
+**Decision:** pivot to n_hidden=200 with full-scale settings rather than continuing to probe n_hidden=100.
+
+---
+
+### Run 28 — n_hidden=200, smoke preset, 150 epochs, rpt_step=10
+
+First full-capacity diagnostic run.
+
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set task.a_exo=3 --set task.tau_exo=30 \
+    --set task.t_pre=100 --set task.t_post=250 \
+    --set task.rpt_step=10 \
+    --set task.sigma_init_shared=0.3 --set task.sigma_init_private=0.05 \
+    --set task.threshold=0.40 \
+    --set train.lr=1e-4 \
+    --set train.epochs=150 \
+    --set model.n_hidden=200 \
+    --no-plots
+```
+
+| | m0 | m1 | target |
+|---|---|---|---|
+| t_vortex | 184ms | 176ms | 105/106ms |
+| D | 0.085 | 0.077 | 0.28/0.27 |
+| A | 1.0 | 1.0 | 0.92/0.97 |
+| frac_crossed | 0.67 | 0.76 | — |
+| vortex_depth | +0.278 | +0.112 | negative |
+
+**Key findings:**
+- m0 ≠ m1 for first time at n_hidden=200 — maturation signal differentiating
+- D > 0 for both states — genuine vortex structure emerging
+- vortex_depth positive (curve above chance) — timing too late, exogenous capture not yet occurring
+- gap_max=350 with t_post=250 identified as mismatch — trials with gap>250ms have negative available post-cue time; must fix before extending
+
+**Discussions:** gap_max/t_post mismatch analysis; Salinas 2019 reviewed confirming gap 0-350ms with 450ms RT deadline; lapse branch architecture re-examined against Zhu 2024 — lapse branch setup confirmed correct (lapses are rule-application failures, not maturation-dependent dynamics; m-differentiation belongs in normal branch only); intermediate saccade (40%/23%) finding from Zhou 2016 PNAS confirmed to be outside tachometric curve scope and not a valid loss constraint.
+
+---
+
+### Run 29 — n_hidden=200, 300 epochs, gap_max=350, t_post=250 (mismatched)
+
+```bash
+# gap_max=350, t_post=250 — mismatched; ~30% of training trials cut off
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set model.n_hidden=200 \
+    --set task.t_post=250 --set task.gap_max=350 \
+    --set task.rpt_step=10 \
+    --set task.threshold=0.40 \
+    --set train.lr=1e-4 \
+    --set train.epochs=300 \
+    --no-plots
+```
+
+| | m0 | m1 | target |
+|---|---|---|---|
+| t_vortex | 199ms | 156ms | 105/106ms |
+| D | 0.104 | 0.154 | 0.28/0.27 |
+| A | 1.0 | 1.0 | 0.92/0.97 |
+| frac_crossed | 0.46 | 0.58 | — |
+| score | 1.397 | | — |
+
+m1 t_vortex moved 176→156ms in 150 additional epochs — trending correctly. D growing. m0/m1 split widening (199 vs 156ms). Loss noisy but descending.
+
+**Discussions:** rpt_max analysis — 240ms ceiling clips t_rise for m0 (199ms at ceiling); rpt_bin_width=12 vs Zhu 2024 bin width of 20ms; decision to move to biologically correct settings: t_post=500, gap_max=350, rpt_max=350, rpt_bin_width=20. Salinas 2019 re-read confirming gap 0-350ms with correct rPT mechanics. ReduceLROnPlateau scheduler analyzed — patience=50 with noisy loss causing erratic firing; plateau_factor=0.99999 and patience=99999 adopted to effectively disable. hard_eval_trials_per_gap=10 identified as a source of noisy hard loss readings.
+
+---
+
+### Run 30 — n_hidden=200, full biological settings, 600 epochs, batch_size=64
+
+First run with correct t_post=500, gap_max=350, rpt_max=350, rpt_bin_width=20.
+
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke \
+    --set model.n_hidden=200 \
+    --set task.t_post=500 --set task.gap_max=350 \
+    --set task.rpt_max=350 --set task.rpt_bin_width=20 \
+    --set task.rpt_step=10 \
+    --set task.threshold=0.40 \
+    --set train.lr=1e-4 \
+    --set train.epochs=600 \
+    --no-plots
+```
+
+| | m0 | m1 | target |
+|---|---|---|---|
+| t_vortex | 200ms | 164ms | 105/106ms |
+| D | 0.044 | ≈0 | 0.28/0.27 |
+| A | 1.0 | 1.0 | 0.92/0.97 |
+| frac_crossed | 0.74 | 0.83 | — |
+| vortex_depth | -0.069 | -0.188 | negative ✓ |
+| score | 1.635 | | — |
+| final_train_loss | 0.966 | | — |
+
+Both vortex_depths genuinely negative for first time at n_hidden=200. frac_crossed healthy. m0/m1 differentiated (200 vs 164ms). Loss (0.966) lowest seen at this scale. Timing still ~60-80ms too late.
+
+**Discussions:** batch_size 64→256 analysis — vortex region underrepresented in small batches (4-5 bins across ~40ms rPT range may have 0-1 trials per batch); 256 gives 4× more vortex-region gradient signal per update; one gradient update per epoch confirmed (train.py:71 — no steps_per_epoch loop). Scheduler erratic firing confirmed as contaminating prior runs. Scheduler effectively disabled with (plateau_patience=99999, plateau_factor=0.99999).
+
+---
+
+### Run 31 — full preset, batch_size=200, scheduler active (bug shown-- revealed argv plateau_patience (etc.) not consumed by training mechanism.)
+
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset full \
+    --set task.a_exo=3 --set task.tau_exo=30 \
+    --set task.threshold=0.40 \
+    --set task.sigma_init_shared=0.3 --set task.sigma_init_private=0.05 \
+    --set train.lr=1e-4 \
+    --set train.epochs=500 \
+    --set train.batch_size=200 \
+    --no-plots
+```
+
+**Killed at epoch ~400.** Scheduler fired 6 times in 400 epochs: 1e-4 → 5e-5 → 2.5e-5 → 1.25e-5 → 6.25e-6 → 3.125e-6 → 1.56e-6. By epoch 400 LR was 64× smaller than start. Loss stagnating at 0.82-0.97 with no descent. Loss noise (0.75-1.64 swings) caused scheduler to anchor on early lucky low point (best=0.7434) and keep halving.
+
+**Conclusion:** ReduceLROnPlateau with patience=50 incompatible with noisy tachometric loss. Scheduler param consumption fixed, and LR scheduler was disabled for all subsequent runs.
+
+---
+
+### Run 32 — n_hidden=200, full preset, lr=3e-5, 200 epochs (key diagnostic)
+
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset full \
+    --set model.n_hidden=200 \
+    --set train.batch_size=200 \
+    --set train.lr=3e-5 \
+    --set train.epochs=200 \
+    --set task.rpt_bin_width=20 \
+    --set train.hard_eval_trials_per_gap=50 \
+    --set train.plateau_patience=99999 \
+    --set train.plateau_factor=0.99999 \
+    --set eval.trials_per_gap=200 \
+    --no-plots
+```
+
+| | m0 | m1 | target |
+|---|---|---|---|
+| t_vortex | 165ms | 180ms | 105/106ms |
+| t_rise | 165ms | 180ms | 155/140ms |
+| D | 0.122 | 0.055 | 0.28/0.27 |
+| **A** | **0.900** | **0.964** | **0.92/0.97** |
+| frac_crossed | 0.81 | 0.89 | — |
+| vortex_depth | -0.184 | -0.278 | negative ✓ |
+| score | 1.149 | | — |
+| final_train_loss | 0.822 | | — |
+
+**Best result up until this point.** Key achievements:
+- A no longer 1.0 — lapse mechanism working: A_m0=0.900 vs target 0.920, A_m1=0.964 vs target 0.970
+- Loss stable throughout — no degradation — lr=3e-5 fixed the instability problem
+- m0/m1 differentiated, vortex_depth negative both states
+- Timing still ~60ms too late
+
+m=0/m=1 convention verified post-run — correct (m0=young, m1=adult). Inverted t_vortex direction (m0 faster than m1) is a genuine model behavior at this training stage, not a labeling error.
+
+---
+
+### Run 33 — n_hidden=200, 2000 epochs from scratch, lr=3e-5 (degradation study)
+
+```bash
+python -m antisaccade_model.experiments.opt_behavior_fit --preset full \
+    --set model.n_hidden=200 \
+    --set train.batch_size=200 \
+    --set train.lr=3e-5 \
+    --set train.epochs=2000 \
+    --set train.hard_eval_trials_per_gap=50 \
+    --set train.plateau_patience=99999 \
+    --set train.plateau_factor=0.99999 \
+    --set eval.trials_per_gap=200 \
+    --no-plots
+```
+
+Stopped by user at epoch 1060. Loss trajectory:
+- Epochs 0-300: healthy (0.75-0.85, frac_crossed 0.83-0.92) — same good basin as Run 32
+- Epochs 300-500: slow upward drift, frac_crossed to 0.77-0.81
+- Epochs 500-700: accelerating degradation, loss 0.88-0.95
+- Epochs 700-1060: full degradation, loss 0.90-1.15, frac_crossed 0.62-0.80
+- Final metrics: A=1.0, D≈0, score=1.651
+
+**Finding:** good basin found reliably at epoch 100-300, but not stable under continued gradient updates at lr=3e-5. Optimizer walks out of basin. The 200-epoch result is the best the model achieves at this LR; more epochs hurt. Discussion: gap sampling change; no longer uniform in 0-350ms, but split into /n_strata (5) bins: 0-70..280-350. At batch_size=200, effective num trials per bin is 40. Batch_size/n_strata determines num trials per sampling bin.
+
+---
+
+### Run 34 — n_hidden=200, 2000 epochs, gap stratification (5 coarse bins)
+
+Gap sampling changed from uniform continuous to stratified over 5 coarse bins covering 0-350ms (equal trials per bin). Same hyperparameters as Single Run 6.
+
+```bash
+# gap stratification: 5 bins over 0-350ms, equal trials per bin
+python -m antisaccade_model.experiments.opt_behavior_fit --preset full \
+    --set model.n_hidden=200 \
+    --set train.batch_size=200 \
+    --set train.lr=3e-5 \
+    --set train.epochs=2000 \
+    --set train.hard_eval_trials_per_gap=50 \
+    --set train.plateau_patience=99999 \
+    --set train.plateau_factor=0.99999 \
+    --set eval.trials_per_gap=200 \
+    --no-plots
+```
+
+Stopped by user at epoch 1060 (frac_crossed=0.62).
+
+Log trajectory:
+- Epochs 0-420: healthy (loss 0.75-0.87, frac_crossed 0.81-0.92) — stable longer than Run 33 (420 vs ~300 epochs)
+- Epochs ~500-1430: gradual frac_crossed degradation (0.23 by epoch 1430)
+- Epochs 1430-2000: frac_crossed collapses to 0.04-0.14, loss 0.94-1.21
+
+Final metrics despite collapsed frac_crossed:
+| | m0 | m1 | target |
+|---|---|---|---|
+| t_vortex | **83ms** | **87ms** | 105/106ms |
+| t_rise | 138ms | 114ms | 155/140ms |
+| D | **0.219** | **0.249** | 0.28/0.27 |
+| A | 0.994 | 0.999 | 0.92/0.97 |
+| frac_crossed | 0.090 | 0.062 | — |
+| score | 3.432 | | — |
+
+**Key findings:**
+- D closest to target ever (0.219/0.249 vs 0.28/0.27) — gap stratification dramatically improved vortex gradient signal
+- t_vortex now **too early** (83-87ms) rather than too late — direction flipped by stratification
+- t_rise in correct ballpark for first time (138ms vs 155ms target for m0)
+- frac_crossed catastrophically low (6-9%) — model learned to only fire on vortex-region trials
+- Score inflated by massive crossing penalty (5 × max(0, 0.4 - 0.062) ≈ 1.69 per state)
+- Degenerate solution: correct curve shape from tiny fraction of trials
+
+**Interpretation:** two separable problems now visible:
+1. Run 32 (no stratification): correct A, stable race, timing too late, shallow D
+2. Run 34 (stratification): correct D, timing close, but dead race
+
+Gap stratification fixed the D/t_vortex problem but amplified the lapse-gradient-vs-race-health tension. Crossing penalty weight (5×) insufficient to prevent optimizer from trading race health for curve shape over long training.
+
+**Discussion:** Salinas-inspired gap strata (boundaries at 0,75,100,125,150,175,200,250,350ms) discussed as more biologically grounded alternative to equal-width bins — denser sampling in vortex-producing gap range (75-200ms) matching experimental design. Next run: resume Run 32 checkpoint with lr=1e-5.
+
+---
+
+## Current best config (updated)
+
+| field | value | source |
+|---|---|---|
+| `model.n_hidden` | 200 | Run 32 |
+| `model.n_rank` | 2 | Locked (architectural) |
+| `task.threshold` | 0.40 | Sweep 22 |
+| `task.a_exo` | 3.0 | Sweep 3 |
+| `task.tau_exo` | 30.0 | Sweep 4 |
+| `task.t_pre` | 100 | Sweep 13 |
+| `task.t_post` | 500 | Biological target (Salinas 2019) |
+| `task.gap_max` | 350 | Biological target (Salinas 2019) |
+| `task.rpt_max` | 350 | Biological target (Zhu 2024 curve range) |
+| `task.rpt_step` | 10 | Sweep 28 |
+| `task.rpt_bin_width` | 20 | Zhu 2024 binning |
+| `task.sigma_init_shared` | 0.3 | Sweep 20 |
+| `task.sigma_init_private` | 0.05 | Sweep 20 |
+| `task.sigma_noise` | 0.1 | Default; not yet swept |
+| `task.commit_temp` | 0.2 | Default; Phase 3 knob |
+| `train.lr` | 3e-5 | Run 32 |
+| `train.batch_size` | 200 | Run 32 |
+| `train.epochs` | 200 (good basin)  Run 32 |
+| `train.hard_eval_trials_per_gap` | 50 | Run 32 |
+| `train.plateau_patience` | 99999 | Run 31 (disable scheduler) |
+| `train.plateau_factor` | 0.99999 | Run 31 (disable scheduler) |
+| `eval.trials_per_gap` | 200 | Run 32 |
+| `model.lapse_young_init` | 0.08 | Salinas 2019 + Zhu 2024 inference |
+| `model.lapse_adult_init` | 0.02 | Salinas 2019 |
+
+**Best run:** Run 34.
+
+---
+
+## Considerations moving forward
+
+1. **I am not sure, but I think: Cost function currently weights vortex region errors higher**. if true: current coarse binned uniform gap sampling might be fine if we decrease that weight or add penalties elsewhere. **increasing no-crossing penalty weight** (past 5x) is a possibility there.
+2. **Salinas-inspired experimental gap sampling (denser coverage on middle region)** might also change our operation to the right fitting protocol without high vortex region weighting (again, if we have high vortex region weight). 
+3. **Consider: Phase 3 tuning (after stable fit with healthy frac_crossed):** biological parameters. eg tau_exo (timing) commit_temp (recovery slope steepness).
+4. **n_hidden=256** — possible scale-up if n_hidden=200 config fits stably.

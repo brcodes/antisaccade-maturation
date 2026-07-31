@@ -1,0 +1,61 @@
+{
+  "task": {
+    "dt": 1.0,
+    "tau": 10.0,
+    "t_pre": 100.0,
+    "t_post": 500.0,
+    "gap_min": 0.0,
+    "gap_max": 350.0,
+    "a_exo": 3.0,
+    "tau_exo": 30.0,
+    "cue_sustained": 1.0,
+    "threshold": 0.4,
+    "commit_temp": 0.2,
+    "option_temp": 0.2,
+    "sigma_noise": 0.1,
+    "sigma_init_shared": 0.3,
+    "sigma_init_private": 0.05,
+    "rpt_min": 0.0,
+    "rpt_max": 350.0,
+    "rpt_step": 10.0,
+    "rpt_bin_width": 20.0
+  },
+  "model": {
+    "n_input": 5,
+    "n_hidden": 200,
+    "n_rank": 2,
+    "n_output": 2,
+    "phi": "tanh",
+    "init_rec_scale": 0.1,
+    "lambda_reg": 0.0001,
+    "lapse_young_init": 0.08,
+    "lapse_adult_init": 0.02
+  },
+  "train": {
+    "epochs": 2000,
+    "batch_size": 200,
+    "lr": 3e-05,
+    "grad_clip": 1.0,
+    "warmup_epochs": 10,
+    "resume_checkpoint": null,
+    "m_choices": [
+      0.0,
+      1.0
+    ],
+    "log_every": 10,
+    "verify_continue_every": 10,
+    "hard_eval_trials_per_gap": 50,
+    "plateau_patience": 99999,
+    "plateau_factor": 0.99999,
+    "seed": 0,
+    "checkpoint_path": "results/opt/single_20260730_230527/model.pt",
+    "device": "cpu"
+  },
+  "eval": {
+    "trials_per_gap": 200,
+    "m_values": [
+      0.0,
+      1.0
+    ]
+  }
+}

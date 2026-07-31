@@ -60,7 +60,7 @@ except ImportError:  # pragma: no cover - direct script execution path
 @dataclass
 class TrainConfig:
     epochs: int = 1000
-    batch_size: int = 256
+    batch_size: int = 200
     lr: float = 1e-3
     grad_clip: float = 1.0
     warmup_epochs: int = 100
@@ -103,7 +103,7 @@ PRESETS: dict[str, dict[str, Any]] = {
         "task.rpt_max": 240.0,
         "task.rpt_step": 30.0,
         "train.epochs": 50,
-        "train.batch_size": 64,
+        "train.batch_size": 60,
         "train.warmup_epochs": 10,
         "train.log_every": 10,
     },
@@ -115,7 +115,7 @@ PRESETS: dict[str, dict[str, Any]] = {
         "task.rpt_max": 300.0,
         "task.rpt_step": 10.0,
         "train.epochs": 1000,
-        "train.batch_size": 256,
+        "train.batch_size": 250,
         "train.warmup_epochs": 100,
         "train.log_every": 50,
     },

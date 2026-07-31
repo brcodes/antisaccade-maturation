@@ -1,4 +1,8 @@
-"""rPT (gap) curriculum scheduler.
+"""Gap samplers for training and legacy curriculum use.
+
+Primary training uses equal-count stratified sampling across the full gap
+range. The central-hole curriculum helpers remain available for experimental
+callers that explicitly use them.
 
 Early in training the network only sees extreme gaps, where the task is easy
 (very short gap -> long rPT -> clear goal-directed response; very long gap ->
@@ -16,6 +20,33 @@ from typing import Optional
 import torch
 
 from ..task.task_params import TaskParams
+
+N_GAP_STRATA = 5
+
+
+def sample_stratified_gaps(
+    batch_size: int,
+    task: TaskParams,
+    n_strata: int = N_GAP_STRATA,
+    generator: Optional[torch.Generator] = None,
+) -> torch.Tensor:
+    """Sample equal numbers of gaps uniformly within contiguous strata."""
+    if n_strata <= 0:
+        raise ValueError("n_strata must be positive")
+    if batch_size % n_strata != 0:
+        raise ValueError(f"batch_size ({batch_size}) must be divisible by n_strata ({n_strata})")
+    if task.gap_max <= task.gap_min:
+        raise ValueError("task.gap_max must be greater than task.gap_min")
+
+    samples_per_stratum = batch_size // n_strata
+    stratum_width = (task.gap_max - task.gap_min) / n_strata
+    stratum_indices = torch.arange(n_strata).repeat_interleave(samples_per_stratum)
+    gaps = (
+        task.gap_min
+        + stratum_indices * stratum_width
+        + torch.rand(batch_size, generator=generator) * stratum_width
+    )
+    return gaps[torch.randperm(batch_size, generator=generator)]
 
 
 def hole_halfwidth_for_epoch(

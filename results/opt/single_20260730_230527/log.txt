@@ -1,0 +1,657 @@
+2026-07-30 23:05:27,116 INFO Preset=full  output=results/opt/single_20260730_230527
+2026-07-30 23:05:27,116 INFO argv=['/Users/brycerogers/Documents/antisaccade-maturation/antisaccade_model/experiments/opt_behavior_fit.py', '--preset', 'full', '--set', 'model.n_hidden=200', '--set', 'train.batch_size=200', '--set', 'train.lr=3e-5', '--set', 'train.epochs=2000', '--set', 'train.verify_continue_every=10', '--set', 'train.hard_eval_trials_per_gap=50', '--set', 'train.plateau_patience=99999', '--set', 'train.plateau_factor=0.99999', '--no-plots']
+2026-07-30 23:05:27,116 INFO raw --set items=['model.n_hidden=200', 'train.batch_size=200', 'train.lr=3e-5', 'train.epochs=2000', 'train.verify_continue_every=10', 'train.hard_eval_trials_per_gap=50', 'train.plateau_patience=99999', 'train.plateau_factor=0.99999']
+2026-07-30 23:05:27,116 INFO Resolved full params:
+2026-07-30 23:05:27,116 INFO eval.trials_per_gap=200
+2026-07-30 23:05:27,116 INFO eval.m_values=[0.0,1.0]
+2026-07-30 23:05:27,116 INFO model.n_input=5
+2026-07-30 23:05:27,116 INFO model.n_hidden=200
+2026-07-30 23:05:27,116 INFO model.n_rank=2
+2026-07-30 23:05:27,116 INFO model.n_output=2
+2026-07-30 23:05:27,116 INFO model.phi='tanh'
+2026-07-30 23:05:27,116 INFO model.init_rec_scale=0.1
+2026-07-30 23:05:27,117 INFO model.lambda_reg=0.0001
+2026-07-30 23:05:27,117 INFO model.lapse_young_init=0.08
+2026-07-30 23:05:27,117 INFO model.lapse_adult_init=0.02
+2026-07-30 23:05:27,117 INFO task.dt=1.0
+2026-07-30 23:05:27,117 INFO task.tau=10.0
+2026-07-30 23:05:27,117 INFO task.t_pre=100.0
+2026-07-30 23:05:27,117 INFO task.t_post=500.0
+2026-07-30 23:05:27,117 INFO task.gap_min=0.0
+2026-07-30 23:05:27,117 INFO task.gap_max=350.0
+2026-07-30 23:05:27,117 INFO task.a_exo=3.0
+2026-07-30 23:05:27,117 INFO task.tau_exo=30.0
+2026-07-30 23:05:27,117 INFO task.cue_sustained=1.0
+2026-07-30 23:05:27,117 INFO task.threshold=0.4
+2026-07-30 23:05:27,117 INFO task.commit_temp=0.2
+2026-07-30 23:05:27,117 INFO task.option_temp=0.2
+2026-07-30 23:05:27,117 INFO task.sigma_noise=0.1
+2026-07-30 23:05:27,118 INFO task.sigma_init_shared=0.3
+2026-07-30 23:05:27,118 INFO task.sigma_init_private=0.05
+2026-07-30 23:05:27,118 INFO task.rpt_min=0.0
+2026-07-30 23:05:27,118 INFO task.rpt_max=350.0
+2026-07-30 23:05:27,118 INFO task.rpt_step=10.0
+2026-07-30 23:05:27,118 INFO task.rpt_bin_width=20.0
+2026-07-30 23:05:27,118 INFO train.epochs=2000
+2026-07-30 23:05:27,118 INFO train.batch_size=200
+2026-07-30 23:05:27,118 INFO train.lr=3e-05
+2026-07-30 23:05:27,118 INFO train.grad_clip=1.0
+2026-07-30 23:05:27,118 INFO train.warmup_epochs=10
+2026-07-30 23:05:27,118 INFO train.resume_checkpoint=None
+2026-07-30 23:05:27,118 INFO train.m_choices=[0.0,1.0]
+2026-07-30 23:05:27,118 INFO train.log_every=10
+2026-07-30 23:05:27,118 INFO train.verify_continue_every=10
+2026-07-30 23:05:27,118 INFO train.hard_eval_trials_per_gap=50
+2026-07-30 23:05:27,118 INFO train.plateau_patience=99999
+2026-07-30 23:05:27,119 INFO train.plateau_factor=0.99999
+2026-07-30 23:05:27,119 INFO train.seed=0
+2026-07-30 23:05:27,119 INFO train.checkpoint_path='results/opt/single_20260730_230527/model.pt'
+2026-07-30 23:05:27,119 INFO train.device='cpu'
+/opt/miniconda3/envs/tcia-lung1-seg-class-cpu/lib/python3.10/site-packages/transformers/utils/generic.py:441: UserWarning: torch.utils._pytree._register_pytree_node is deprecated. Please use torch.utils._pytree.register_pytree_node instead.
+  _torch_pytree._register_pytree_node(
+epoch    0 | loss 1.20728 | curve 1.20727 | hard 0.69122 | reg 0.00000 | crossed 0.81
+stop run? press enter
+continuing
+epoch   10 | loss 1.13225 | curve 1.13224 | hard 0.59575 | reg 0.00000 | crossed 0.76
+stop run? press enter
+continuing
+epoch   20 | loss 1.08946 | curve 1.08946 | hard 0.73448 | reg 0.00000 | crossed 0.81
+stop run? press enter
+continuing
+epoch   30 | loss 1.01800 | curve 1.01800 | hard 0.88617 | reg 0.00000 | crossed 0.86
+stop run? press enter
+continuing
+epoch   40 | loss 0.99820 | curve 0.99819 | hard 0.16246 | reg 0.00000 | crossed 0.84
+stop run? press enter
+continuing
+epoch   50 | loss 0.97149 | curve 0.97149 | hard 0.92976 | reg 0.00000 | crossed 0.81
+stop run? press enter
+continuing
+epoch   60 | loss 0.91571 | curve 0.91571 | hard 0.79858 | reg 0.00000 | crossed 0.86
+stop run? press enter
+continuing
+epoch   70 | loss 0.89781 | curve 0.89780 | hard 1.11333 | reg 0.00000 | crossed 0.88
+stop run? press enter
+continuing
+epoch   80 | loss 0.85567 | curve 0.85567 | hard 0.82928 | reg 0.00000 | crossed 0.82
+stop run? press enter
+continuing
+epoch   90 | loss 0.80743 | curve 0.80743 | hard 0.52666 | reg 0.00000 | crossed 0.90
+stop run? press enter
+continuing
+epoch  100 | loss 0.84782 | curve 0.84781 | hard 1.17102 | reg 0.00000 | crossed 0.88
+stop run? press enter
+continuing
+epoch  110 | loss 0.81993 | curve 0.81992 | hard 0.97900 | reg 0.00000 | crossed 0.86
+stop run? press enter
+continuing
+epoch  120 | loss 0.75227 | curve 0.75227 | hard 1.92870 | reg 0.00000 | crossed 0.91
+stop run? press enter
+continuing
+epoch  130 | loss 0.84701 | curve 0.84700 | hard 0.95761 | reg 0.00000 | crossed 0.89
+stop run? press enter
+continuing
+epoch  140 | loss 0.83807 | curve 0.83806 | hard 1.56648 | reg 0.00000 | crossed 0.82
+stop run? press enter
+continuing
+epoch  150 | loss 0.80858 | curve 0.80858 | hard 0.57001 | reg 0.00000 | crossed 0.92
+stop run? press enter
+continuing
+epoch  160 | loss 0.84535 | curve 0.84535 | hard 1.17744 | reg 0.00000 | crossed 0.89
+stop run? press enter
+continuing
+epoch  170 | loss 0.77396 | curve 0.77395 | hard 1.83594 | reg 0.00000 | crossed 0.89
+stop run? press enter
+continuing
+epoch  180 | loss 0.84944 | curve 0.84944 | hard 1.46791 | reg 0.00000 | crossed 0.87
+stop run? press enter
+continuing
+epoch  190 | loss 0.76520 | curve 0.76520 | hard 0.63782 | reg 0.00000 | crossed 0.89
+stop run? press enter
+continuing
+epoch  200 | loss 0.78325 | curve 0.78324 | hard 0.98562 | reg 0.00000 | crossed 0.88
+stop run? press enter
+continuing
+epoch  210 | loss 0.80327 | curve 0.80327 | hard 1.41862 | reg 0.00000 | crossed 0.85
+stop run? press enter
+continuing
+epoch  220 | loss 0.80438 | curve 0.80438 | hard 0.70052 | reg 0.00000 | crossed 0.85
+stop run? press enter
+continuing
+epoch  230 | loss 0.76159 | curve 0.76159 | hard 1.55590 | reg 0.00000 | crossed 0.88
+stop run? press enter
+continuing
+epoch  240 | loss 0.85792 | curve 0.85792 | hard 2.17390 | reg 0.00000 | crossed 0.81
+stop run? press enter
+continuing
+epoch  250 | loss 0.80178 | curve 0.80178 | hard 1.80409 | reg 0.00000 | crossed 0.87
+stop run? press enter
+continuing
+epoch  260 | loss 0.86468 | curve 0.86468 | hard 1.90613 | reg 0.00000 | crossed 0.88
+stop run? press enter
+continuing
+epoch  270 | loss 0.81628 | curve 0.81627 | hard 0.64951 | reg 0.00000 | crossed 0.85
+stop run? press enter
+continuing
+epoch  280 | loss 0.86388 | curve 0.86388 | hard 0.81418 | reg 0.00000 | crossed 0.86
+stop run? press enter
+continuing
+epoch  290 | loss 0.87420 | curve 0.87419 | hard 1.94740 | reg 0.00000 | crossed 0.86
+stop run? press enter
+continuing
+epoch  300 | loss 0.81667 | curve 0.81666 | hard 1.00482 | reg 0.00000 | crossed 0.86
+stop run? press enter
+continuing
+epoch  310 | loss 0.82858 | curve 0.82857 | hard 0.37087 | reg 0.00000 | crossed 0.86
+stop run? press enter
+continuing
+epoch  320 | loss 0.86186 | curve 0.86186 | hard 1.47259 | reg 0.00000 | crossed 0.83
+stop run? press enter
+continuing
+epoch  330 | loss 0.80553 | curve 0.80552 | hard 0.64038 | reg 0.00000 | crossed 0.88
+stop run? press enter
+continuing
+epoch  340 | loss 0.80166 | curve 0.80165 | hard 1.34319 | reg 0.00000 | crossed 0.87
+stop run? press enter
+continuing
+epoch  350 | loss 0.83395 | curve 0.83395 | hard 1.74237 | reg 0.00000 | crossed 0.84
+stop run? press enter
+continuing
+epoch  360 | loss 0.87009 | curve 0.87008 | hard 1.88955 | reg 0.00000 | crossed 0.81
+stop run? press enter
+continuing
+epoch  370 | loss 0.84068 | curve 0.84068 | hard 1.01787 | reg 0.00000 | crossed 0.86
+stop run? press enter
+continuing
+epoch  380 | loss 0.81131 | curve 0.81130 | hard 0.61235 | reg 0.00000 | crossed 0.86
+stop run? press enter
+continuing
+epoch  390 | loss 0.87226 | curve 0.87225 | hard 0.97413 | reg 0.00000 | crossed 0.82
+stop run? press enter
+continuing
+epoch  400 | loss 0.85132 | curve 0.85131 | hard 2.18039 | reg 0.00000 | crossed 0.88
+stop run? press enter
+continuing
+epoch  410 | loss 0.85075 | curve 0.85075 | hard 1.43846 | reg 0.00000 | crossed 0.87
+stop run? press enter
+continuing
+epoch  420 | loss 0.80055 | curve 0.80055 | hard 1.80496 | reg 0.00000 | crossed 0.86
+stop run? press enter
+continuing
+epoch  430 | loss 0.81163 | curve 0.81162 | hard 2.82565 | reg 0.00000 | crossed 0.86
+stop run? press enter
+continuing
+epoch  440 | loss 0.88492 | curve 0.88491 | hard 1.95831 | reg 0.00000 | crossed 0.81
+stop run? press enter
+continuing
+epoch  450 | loss 0.92561 | curve 0.92561 | hard 1.31503 | reg 0.00000 | crossed 0.82
+stop run? press enter
+continuing
+epoch  460 | loss 0.91258 | curve 0.91258 | hard 1.47154 | reg 0.00000 | crossed 0.84
+stop run? press enter
+continuing
+epoch  470 | loss 0.90005 | curve 0.90005 | hard 2.58375 | reg 0.00000 | crossed 0.81
+stop run? press enter
+continuing
+epoch  480 | loss 0.84145 | curve 0.84145 | hard 1.36287 | reg 0.00000 | crossed 0.86
+stop run? press enter
+continuing
+epoch  490 | loss 0.90468 | curve 0.90468 | hard 2.05090 | reg 0.00000 | crossed 0.84
+stop run? press enter
+continuing
+epoch  500 | loss 0.96386 | curve 0.96386 | hard 1.16277 | reg 0.00000 | crossed 0.76
+stop run? press enter
+continuing
+epoch  510 | loss 0.85459 | curve 0.85459 | hard 1.29609 | reg 0.00000 | crossed 0.81
+stop run? press enter
+continuing
+epoch  520 | loss 0.95417 | curve 0.95417 | hard 2.12450 | reg 0.00000 | crossed 0.83
+stop run? press enter
+continuing
+epoch  530 | loss 0.82136 | curve 0.82135 | hard 1.75137 | reg 0.00000 | crossed 0.81
+stop run? press enter
+continuing
+epoch  540 | loss 0.98933 | curve 0.98933 | hard 1.73233 | reg 0.00000 | crossed 0.81
+stop run? press enter
+continuing
+epoch  550 | loss 0.83516 | curve 0.83516 | hard 1.88712 | reg 0.00000 | crossed 0.82
+stop run? press enter
+continuing
+epoch  560 | loss 0.90837 | curve 0.90837 | hard 1.48599 | reg 0.00000 | crossed 0.80
+stop run? press enter
+continuing
+epoch  570 | loss 0.88866 | curve 0.88866 | hard 1.79260 | reg 0.00000 | crossed 0.77
+stop run? press enter
+continuing
+epoch  580 | loss 0.80239 | curve 0.80239 | hard 1.46593 | reg 0.00000 | crossed 0.84
+stop run? press enter
+continuing
+epoch  590 | loss 0.94418 | curve 0.94418 | hard 1.06071 | reg 0.00000 | crossed 0.77
+stop run? press enter
+continuing
+epoch  600 | loss 0.97960 | curve 0.97960 | hard 2.34721 | reg 0.00000 | crossed 0.75
+stop run? press enter
+continuing
+epoch  610 | loss 0.88668 | curve 0.88667 | hard 1.48347 | reg 0.00000 | crossed 0.85
+stop run? press enter
+continuing
+epoch  620 | loss 0.97485 | curve 0.97484 | hard 1.34042 | reg 0.00000 | crossed 0.77
+stop run? press enter
+continuing
+epoch  630 | loss 0.88065 | curve 0.88064 | hard 2.83727 | reg 0.00000 | crossed 0.82
+stop run? press enter
+continuing
+epoch  640 | loss 0.85610 | curve 0.85609 | hard 1.67653 | reg 0.00000 | crossed 0.77
+stop run? press enter
+continuing
+epoch  650 | loss 0.84756 | curve 0.84756 | hard 1.23640 | reg 0.00000 | crossed 0.84
+stop run? press enter
+continuing
+epoch  660 | loss 0.92594 | curve 0.92594 | hard 1.38642 | reg 0.00000 | crossed 0.77
+stop run? press enter
+continuing
+epoch  670 | loss 0.93369 | curve 0.93368 | hard 1.55708 | reg 0.00000 | crossed 0.80
+stop run? press enter
+continuing
+epoch  680 | loss 0.94266 | curve 0.94266 | hard 2.76840 | reg 0.00000 | crossed 0.86
+stop run? press enter
+continuing
+epoch  690 | loss 0.84923 | curve 0.84923 | hard 2.85758 | reg 0.00000 | crossed 0.78
+stop run? press enter
+continuing
+epoch  700 | loss 0.93546 | curve 0.93545 | hard 1.32043 | reg 0.00000 | crossed 0.80
+stop run? press enter
+continuing
+epoch  710 | loss 0.88418 | curve 0.88418 | hard 2.00693 | reg 0.00000 | crossed 0.79
+stop run? press enter
+continuing
+epoch  720 | loss 1.02624 | curve 1.02624 | hard 1.35908 | reg 0.00000 | crossed 0.75
+stop run? press enter
+continuing
+epoch  730 | loss 1.03720 | curve 1.03719 | hard 2.35716 | reg 0.00000 | crossed 0.82
+stop run? press enter
+continuing
+epoch  740 | loss 1.04216 | curve 1.04216 | hard 2.17221 | reg 0.00000 | crossed 0.73
+stop run? press enter
+continuing
+epoch  750 | loss 0.90634 | curve 0.90634 | hard 2.83074 | reg 0.00000 | crossed 0.71
+stop run? press enter
+continuing
+epoch  760 | loss 1.00301 | curve 1.00301 | hard 1.96123 | reg 0.00000 | crossed 0.76
+stop run? press enter
+continuing
+epoch  770 | loss 0.95292 | curve 0.95292 | hard 2.56521 | reg 0.00000 | crossed 0.76
+stop run? press enter
+continuing
+epoch  780 | loss 1.09814 | curve 1.09814 | hard 1.53697 | reg 0.00000 | crossed 0.75
+stop run? press enter
+continuing
+epoch  790 | loss 0.89172 | curve 0.89172 | hard 2.13828 | reg 0.00000 | crossed 0.73
+stop run? press enter
+continuing
+epoch  800 | loss 0.96187 | curve 0.96187 | hard 1.97106 | reg 0.00000 | crossed 0.75
+stop run? press enter
+continuing
+epoch  810 | loss 0.98138 | curve 0.98137 | hard 1.99970 | reg 0.00000 | crossed 0.73
+stop run? press enter
+continuing
+epoch  820 | loss 0.93382 | curve 0.93382 | hard 2.45657 | reg 0.00000 | crossed 0.67
+stop run? press enter
+continuing
+epoch  830 | loss 0.97468 | curve 0.97467 | hard 2.64219 | reg 0.00000 | crossed 0.76
+stop run? press enter
+continuing
+epoch  840 | loss 0.96326 | curve 0.96326 | hard 2.69019 | reg 0.00000 | crossed 0.75
+stop run? press enter
+continuing
+epoch  850 | loss 0.97953 | curve 0.97952 | hard 2.84840 | reg 0.00000 | crossed 0.71
+stop run? press enter
+continuing
+epoch  860 | loss 0.92740 | curve 0.92739 | hard 2.03172 | reg 0.00000 | crossed 0.74
+stop run? press enter
+continuing
+epoch  870 | loss 1.01037 | curve 1.01037 | hard 1.93960 | reg 0.00000 | crossed 0.74
+stop run? press enter
+continuing
+epoch  880 | loss 0.97104 | curve 0.97104 | hard 1.76745 | reg 0.00000 | crossed 0.77
+stop run? press enter
+continuing
+epoch  890 | loss 0.98611 | curve 0.98611 | hard 1.49577 | reg 0.00000 | crossed 0.68
+stop run? press enter
+continuing
+epoch  900 | loss 0.92940 | curve 0.92939 | hard 2.16338 | reg 0.00000 | crossed 0.77
+stop run? press enter
+continuing
+epoch  910 | loss 1.04561 | curve 1.04561 | hard 2.26309 | reg 0.00000 | crossed 0.72
+stop run? press enter
+continuing
+epoch  920 | loss 0.99158 | curve 0.99158 | hard 2.25380 | reg 0.00000 | crossed 0.70
+stop run? press enter
+continuing
+epoch  930 | loss 1.06758 | curve 1.06757 | hard 2.08611 | reg 0.00000 | crossed 0.69
+stop run? press enter
+continuing
+epoch  940 | loss 1.00419 | curve 1.00419 | hard 1.89184 | reg 0.00000 | crossed 0.70
+stop run? press enter
+continuing
+epoch  950 | loss 1.02611 | curve 1.02611 | hard 1.94769 | reg 0.00000 | crossed 0.69
+stop run? press enter
+continuing
+epoch  960 | loss 0.97989 | curve 0.97989 | hard 2.33774 | reg 0.00000 | crossed 0.80
+stop run? press enter
+continuing
+epoch  970 | loss 0.96651 | curve 0.96651 | hard 1.81041 | reg 0.00000 | crossed 0.70
+stop run? press enter
+continuing
+epoch  980 | loss 1.05706 | curve 1.05706 | hard 2.01107 | reg 0.00000 | crossed 0.65
+stop run? press enter
+continuing
+epoch  990 | loss 1.00952 | curve 1.00951 | hard 2.11869 | reg 0.00000 | crossed 0.70
+stop run? press enter
+continuing
+epoch 1000 | loss 1.16571 | curve 1.16571 | hard 1.52218 | reg 0.00000 | crossed 0.61
+stop run? press enter
+continuing
+epoch 1010 | loss 1.07778 | curve 1.07778 | hard 1.60133 | reg 0.00000 | crossed 0.69
+stop run? press enter
+continuing
+epoch 1020 | loss 1.06019 | curve 1.06019 | hard 1.49407 | reg 0.00000 | crossed 0.71
+stop run? press enter
+continuing
+epoch 1030 | loss 0.99975 | curve 0.99975 | hard 2.07295 | reg 0.00000 | crossed 0.69
+stop run? press enter
+continuing
+epoch 1040 | loss 1.09244 | curve 1.09244 | hard 1.75653 | reg 0.00000 | crossed 0.67
+stop run? press enter
+continuing
+epoch 1050 | loss 1.16893 | curve 1.16893 | hard 2.84606 | reg 0.00000 | crossed 0.59
+stop run? press enter
+continuing
+epoch 1060 | loss 1.12647 | curve 1.12646 | hard 1.77079 | reg 0.00000 | crossed 0.59
+stop run? press enter
+continuing
+epoch 1070 | loss 1.11558 | curve 1.11558 | hard 2.14251 | reg 0.00000 | crossed 0.61
+stop run? press enter
+continuing
+epoch 1080 | loss 0.98428 | curve 0.98428 | hard 1.46834 | reg 0.00000 | crossed 0.64
+stop run? press enter
+continuing
+epoch 1090 | loss 1.12210 | curve 1.12210 | hard 2.81998 | reg 0.00000 | crossed 0.57
+stop run? press enter
+continuing
+epoch 1100 | loss 1.14334 | curve 1.14333 | hard 2.38656 | reg 0.00000 | crossed 0.55
+stop run? press enter
+continuing
+epoch 1110 | loss 1.28852 | curve 1.28852 | hard 2.86071 | reg 0.00000 | crossed 0.62
+stop run? press enter
+continuing
+epoch 1120 | loss 1.27144 | curve 1.27143 | hard 2.00433 | reg 0.00000 | crossed 0.58
+stop run? press enter
+continuing
+epoch 1130 | loss 0.97635 | curve 0.97634 | hard 1.97685 | reg 0.00000 | crossed 0.62
+stop run? press enter
+continuing
+epoch 1140 | loss 0.98768 | curve 0.98768 | hard 1.68661 | reg 0.00000 | crossed 0.60
+stop run? press enter
+continuing
+epoch 1150 | loss 1.10968 | curve 1.10968 | hard 1.86250 | reg 0.00000 | crossed 0.55
+stop run? press enter
+continuing
+epoch 1160 | loss 1.31356 | curve 1.31355 | hard 1.99897 | reg 0.00000 | crossed 0.54
+stop run? press enter
+continuing
+epoch 1170 | loss 1.21940 | curve 1.21940 | hard 2.38369 | reg 0.00000 | crossed 0.52
+stop run? press enter
+continuing
+epoch 1180 | loss 1.08073 | curve 1.08073 | hard 1.37159 | reg 0.00000 | crossed 0.56
+stop run? press enter
+continuing
+epoch 1190 | loss 1.23209 | curve 1.23209 | hard 1.19598 | reg 0.00000 | crossed 0.57
+stop run? press enter
+continuing
+epoch 1200 | loss 1.22293 | curve 1.22293 | hard 1.14175 | reg 0.00000 | crossed 0.55
+stop run? press enter
+continuing
+epoch 1210 | loss 1.21783 | curve 1.21782 | hard 1.63920 | reg 0.00000 | crossed 0.40
+stop run? press enter
+continuing
+epoch 1220 | loss 1.14988 | curve 1.14988 | hard 1.98215 | reg 0.00000 | crossed 0.47
+stop run? press enter
+continuing
+epoch 1230 | loss 1.09737 | curve 1.09737 | hard 1.28108 | reg 0.00000 | crossed 0.45
+stop run? press enter
+continuing
+epoch 1240 | loss 1.21311 | curve 1.21311 | hard 2.17454 | reg 0.00000 | crossed 0.47
+stop run? press enter
+continuing
+epoch 1250 | loss 1.12998 | curve 1.12998 | hard 2.85236 | reg 0.00000 | crossed 0.46
+stop run? press enter
+continuing
+epoch 1260 | loss 1.23394 | curve 1.23393 | hard 2.06553 | reg 0.00000 | crossed 0.38
+stop run? press enter
+continuing
+epoch 1270 | loss 1.15407 | curve 1.15407 | hard 2.16674 | reg 0.00000 | crossed 0.49
+stop run? press enter
+continuing
+epoch 1280 | loss 1.06541 | curve 1.06541 | hard 2.19500 | reg 0.00000 | crossed 0.41
+stop run? press enter
+continuing
+epoch 1290 | loss 1.07083 | curve 1.07083 | hard 2.45311 | reg 0.00000 | crossed 0.46
+stop run? press enter
+continuing
+epoch 1300 | loss 1.16078 | curve 1.16078 | hard 1.29750 | reg 0.00000 | crossed 0.46
+stop run? press enter
+continuing
+epoch 1310 | loss 1.18784 | curve 1.18784 | hard 2.80608 | reg 0.00000 | crossed 0.40
+stop run? press enter
+continuing
+epoch 1320 | loss 1.17032 | curve 1.17032 | hard 2.21143 | reg 0.00000 | crossed 0.44
+stop run? press enter
+continuing
+epoch 1330 | loss 1.08764 | curve 1.08764 | hard 2.13167 | reg 0.00000 | crossed 0.41
+stop run? press enter
+continuing
+epoch 1340 | loss 1.24528 | curve 1.24527 | hard 2.29867 | reg 0.00000 | crossed 0.41
+stop run? press enter
+continuing
+epoch 1350 | loss 1.26188 | curve 1.26188 | hard 1.38716 | reg 0.00000 | crossed 0.43
+stop run? press enter
+continuing
+epoch 1360 | loss 1.04309 | curve 1.04309 | hard 2.80411 | reg 0.00000 | crossed 0.35
+stop run? press enter
+continuing
+epoch 1370 | loss 1.32472 | curve 1.32472 | hard 2.68371 | reg 0.00000 | crossed 0.38
+stop run? press enter
+continuing
+epoch 1380 | loss 1.09434 | curve 1.09433 | hard 1.49508 | reg 0.00000 | crossed 0.29
+stop run? press enter
+continuing
+epoch 1390 | loss 1.08315 | curve 1.08314 | hard 2.85864 | reg 0.00000 | crossed 0.31
+stop run? press enter
+continuing
+epoch 1400 | loss 1.07309 | curve 1.07309 | hard 1.98408 | reg 0.00000 | crossed 0.32
+stop run? press enter
+continuing
+epoch 1410 | loss 1.25587 | curve 1.25587 | hard 2.58145 | reg 0.00000 | crossed 0.31
+stop run? press enter
+continuing
+epoch 1420 | loss 1.15915 | curve 1.15915 | hard 1.74203 | reg 0.00000 | crossed 0.28
+stop run? press enter
+continuing
+epoch 1430 | loss 1.08885 | curve 1.08885 | hard 2.65930 | reg 0.00000 | crossed 0.23
+stop run? press enter
+continuing
+epoch 1440 | loss 1.11526 | curve 1.11526 | hard 1.98435 | reg 0.00000 | crossed 0.27
+stop run? press enter
+continuing
+epoch 1450 | loss 1.09556 | curve 1.09556 | hard 1.34621 | reg 0.00000 | crossed 0.23
+stop run? press enter
+continuing
+epoch 1460 | loss 1.30315 | curve 1.30315 | hard 1.08187 | reg 0.00000 | crossed 0.23
+stop run? press enter
+continuing
+epoch 1470 | loss 1.09864 | curve 1.09863 | hard 1.94105 | reg 0.00000 | crossed 0.23
+stop run? press enter
+continuing
+epoch 1480 | loss 1.14117 | curve 1.14117 | hard 1.09034 | reg 0.00000 | crossed 0.25
+stop run? press enter
+continuing
+epoch 1490 | loss 1.21408 | curve 1.21408 | hard 1.29321 | reg 0.00000 | crossed 0.19
+stop run? press enter
+continuing
+epoch 1500 | loss 1.16954 | curve 1.16954 | hard 2.22055 | reg 0.00000 | crossed 0.22
+stop run? press enter
+continuing
+epoch 1510 | loss 1.05374 | curve 1.05374 | hard 1.16949 | reg 0.00000 | crossed 0.15
+stop run? press enter
+continuing
+epoch 1520 | loss 1.05515 | curve 1.05515 | hard 1.51864 | reg 0.00000 | crossed 0.14
+stop run? press enter
+continuing
+epoch 1530 | loss 0.94041 | curve 0.94041 | hard 2.18884 | reg 0.00000 | crossed 0.15
+stop run? press enter
+continuing
+epoch 1540 | loss 1.18514 | curve 1.18514 | hard 2.16716 | reg 0.00000 | crossed 0.13
+stop run? press enter
+continuing
+epoch 1550 | loss 1.13153 | curve 1.13153 | hard 1.63648 | reg 0.00000 | crossed 0.10
+stop run? press enter
+continuing
+epoch 1560 | loss 0.93281 | curve 0.93281 | hard 1.54347 | reg 0.00000 | crossed 0.12
+stop run? press enter
+continuing
+epoch 1570 | loss 1.03466 | curve 1.03466 | hard 1.11274 | reg 0.00000 | crossed 0.12
+stop run? press enter
+continuing
+epoch 1580 | loss 1.01991 | curve 1.01991 | hard 0.88373 | reg 0.00000 | crossed 0.09
+stop run? press enter
+continuing
+epoch 1590 | loss 1.07049 | curve 1.07048 | hard 0.70519 | reg 0.00000 | crossed 0.06
+stop run? press enter
+continuing
+epoch 1600 | loss 1.03965 | curve 1.03965 | hard 0.56196 | reg 0.00000 | crossed 0.09
+stop run? press enter
+continuing
+epoch 1610 | loss 1.03523 | curve 1.03523 | hard 0.40651 | reg 0.00000 | crossed 0.10
+stop run? press enter
+continuing
+epoch 1620 | loss 0.98290 | curve 0.98290 | hard 0.69347 | reg 0.00000 | crossed 0.14
+stop run? press enter
+continuing
+epoch 1630 | loss 1.12064 | curve 1.12064 | hard 0.70689 | reg 0.00000 | crossed 0.09
+stop run? press enter
+continuing
+epoch 1640 | loss 1.07034 | curve 1.07034 | hard 0.71051 | reg 0.00000 | crossed 0.10
+stop run? press enter
+continuing
+epoch 1650 | loss 0.99332 | curve 0.99332 | hard 0.53336 | reg 0.00000 | crossed 0.10
+stop run? press enter
+continuing
+epoch 1660 | loss 0.92700 | curve 0.92699 | hard 0.83209 | reg 0.00000 | crossed 0.10
+stop run? press enter
+continuing
+epoch 1670 | loss 1.04480 | curve 1.04479 | hard 0.56937 | reg 0.00000 | crossed 0.08
+stop run? press enter
+continuing
+epoch 1680 | loss 0.96284 | curve 0.96283 | hard 1.30759 | reg 0.00000 | crossed 0.06
+stop run? press enter
+continuing
+epoch 1690 | loss 0.93189 | curve 0.93189 | hard 0.81674 | reg 0.00000 | crossed 0.08
+stop run? press enter
+continuing
+epoch 1700 | loss 1.12200 | curve 1.12200 | hard 1.19290 | reg 0.00000 | crossed 0.07
+stop run? press enter
+continuing
+epoch 1710 | loss 1.01609 | curve 1.01608 | hard 0.83147 | reg 0.00000 | crossed 0.09
+stop run? press enter
+continuing
+epoch 1720 | loss 0.86587 | curve 0.86587 | hard 1.39675 | reg 0.00000 | crossed 0.09
+stop run? press enter
+continuing
+epoch 1730 | loss 0.94267 | curve 0.94267 | hard 0.81207 | reg 0.00000 | crossed 0.05
+stop run? press enter
+continuing
+epoch 1740 | loss 1.01215 | curve 1.01215 | hard 0.40942 | reg 0.00000 | crossed 0.09
+stop run? press enter
+continuing
+epoch 1750 | loss 0.96310 | curve 0.96310 | hard 0.58531 | reg 0.00000 | crossed 0.09
+stop run? press enter
+continuing
+epoch 1760 | loss 1.03797 | curve 1.03797 | hard 0.54852 | reg 0.00000 | crossed 0.09
+stop run? press enter
+continuing
+epoch 1770 | loss 1.02619 | curve 1.02619 | hard 0.67517 | reg 0.00000 | crossed 0.07
+stop run? press enter
+continuing
+epoch 1780 | loss 1.10740 | curve 1.10740 | hard 0.68079 | reg 0.00000 | crossed 0.06
+stop run? press enter
+continuing
+epoch 1790 | loss 1.09954 | curve 1.09953 | hard 0.78731 | reg 0.00000 | crossed 0.08
+stop run? press enter
+continuing
+epoch 1800 | loss 1.07067 | curve 1.07067 | hard 0.91663 | reg 0.00000 | crossed 0.10
+stop run? press enter
+continuing
+epoch 1810 | loss 1.05271 | curve 1.05271 | hard 0.72001 | reg 0.00000 | crossed 0.06
+stop run? press enter
+continuing
+epoch 1820 | loss 1.04749 | curve 1.04749 | hard 0.58045 | reg 0.00000 | crossed 0.06
+stop run? press enter
+continuing
+epoch 1830 | loss 0.99937 | curve 0.99937 | hard 0.64364 | reg 0.00000 | crossed 0.07
+stop run? press enter
+continuing
+epoch 1840 | loss 0.99685 | curve 0.99684 | hard 0.57673 | reg 0.00000 | crossed 0.14
+stop run? press enter
+continuing
+epoch 1850 | loss 1.05069 | curve 1.05068 | hard 0.70716 | reg 0.00000 | crossed 0.08
+stop run? press enter
+continuing
+epoch 1860 | loss 1.03793 | curve 1.03793 | hard 0.83194 | reg 0.00000 | crossed 0.09
+stop run? press enter
+continuing
+epoch 1870 | loss 1.02787 | curve 1.02787 | hard 0.50409 | reg 0.00000 | crossed 0.10
+stop run? press enter
+continuing
+epoch 1880 | loss 1.14590 | curve 1.14589 | hard 0.47979 | reg 0.00000 | crossed 0.08
+stop run? press enter
+continuing
+epoch 1890 | loss 1.07571 | curve 1.07570 | hard 0.72888 | reg 0.00000 | crossed 0.12
+stop run? press enter
+continuing
+epoch 1900 | loss 0.98037 | curve 0.98037 | hard 0.46412 | reg 0.00000 | crossed 0.10
+stop run? press enter
+continuing
+epoch 1910 | loss 1.03016 | curve 1.03016 | hard 0.52329 | reg 0.00000 | crossed 0.09
+stop run? press enter
+continuing
+epoch 1920 | loss 1.09196 | curve 1.09196 | hard 0.67206 | reg 0.00000 | crossed 0.08
+stop run? press enter
+continuing
+epoch 1930 | loss 1.05923 | curve 1.05923 | hard 0.86722 | reg 0.00000 | crossed 0.06
+stop run? press enter
+continuing
+epoch 1940 | loss 1.05254 | curve 1.05254 | hard 0.43106 | reg 0.00000 | crossed 0.06
+stop run? press enter
+continuing
+epoch 1950 | loss 1.02414 | curve 1.02413 | hard 1.04693 | reg 0.00000 | crossed 0.09
+stop run? press enter
+continuing
+epoch 1960 | loss 0.94750 | curve 0.94750 | hard 0.35691 | reg 0.00000 | crossed 0.07
+stop run? press enter
+continuing
+epoch 1970 | loss 1.11267 | curve 1.11266 | hard 0.72009 | reg 0.00000 | crossed 0.08
+stop run? press enter
+continuing
+epoch 1980 | loss 1.00352 | curve 1.00351 | hard 0.96647 | reg 0.00000 | crossed 0.06
+stop run? press enter
+continuing
+epoch 1990 | loss 1.04132 | curve 1.04132 | hard 0.81149 | reg 0.00000 | crossed 0.04
+epoch 1999 | loss 0.98636 | curve 0.98636 | hard 0.78675 | reg 0.00000 | crossed 0.05
+stop run? press enter
+continuing
+Saved checkpoint to results/opt/single_20260730_230527/model.pt
+2026-07-31 04:31:31,424 INFO score=3.4322  final_loss=0.9864
+2026-07-31 04:31:31,424 INFO   [m0] A=0.9939 (t=0.9200) t_rise=138.4942 (t=155.0000) t_vortex=83.4483 D=0.2194 frac_crossed=0.09 vortex_depth=-0.4892
+2026-07-31 04:31:31,424 INFO   [m1] A=0.9987 (t=0.9700) t_rise=113.9820 (t=140.0000) t_vortex=86.6578 D=0.2494 frac_crossed=0.06 vortex_depth=-0.5000
+2026-07-31 04:31:31,424 INFO Artifacts in results/opt/single_20260730_230527

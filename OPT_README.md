@@ -27,7 +27,7 @@ is its lightweight sibling built for **iteration speed**:
 
 ```bash
 source /opt/miniconda3/etc/profile.d/conda.sh && conda activate tcia-lung1-seg-class-cpu
-cd /Users/brycerogers/Documents/antisaccade_maturation
+cd /Users/brycerogers/Documents/antisaccade-maturation
 MPLBACKEND=Agg python -m antisaccade_model.experiments.opt_behavior_fit --preset smoke
 ```
 
@@ -39,12 +39,12 @@ architecture + exogenous burst are wired correctly.
 | Knob | `smoke` | `full` | Why smoke shrinks it |
 |---|---|---|---|
 | `model.n_hidden` | 64 | 200 | fewer units → fast forward/backward |
-| `task.t_pre` / `task.t_post` | 50 / 250 | 100 / 500 | shorter timeline → fewer Euler steps |
-| `task.gap_max` | 180 | 350 | narrower rPT range to cover |
-| `task.rpt_step` | 30 | 10 | coarse bins → cheaper curve, less noise |
+| `task.t_pre` / `task.t_post` | 100 / 500 | 100 / 500 | full biological timeline in both presets |
+| `task.gap_max` | 350 | 350 | full experimental gap range in both presets |
+| `task.rpt_step` / `task.rpt_bin_width` | 10 / 20 | 10 / 20 | full analysis grid and training kernel in both presets |
 | `train.epochs` | 50 | 1000 | just enough to see a trend |
-| `train.batch_size` | 64 | 256 | smaller batches |
-| `train.warmup_epochs` | 10 | 100 | curriculum ramps quickly |
+| `train.batch_size` | 60 | 250 | smaller batches, divisible across five gap strata |
+| `train.warmup_epochs` | 10 | 10 | legacy setting; ignored by primary stratified training |
 | `eval.trials_per_gap` | 100 | 200 | faster Monte-Carlo curve |
 
 ---
@@ -84,7 +84,7 @@ defaults  →  --preset  →  explicit flags  →  --set k=v  →  --sweep k=v1,
 - **Dotted keys** address any field of the four underlying dataclasses:
   - `task.*`  → `TaskParams`  (biology/task: `threshold`, `a_exo`, `tau_exo`, `sigma_noise`, `sigma_init_shared`, `sigma_init_private`, `commit_temp`, `tau`, `t_post`, `rpt_*`, …)
   - `model.*` → `ModelParams` (`n_hidden`, `n_rank`, `phi`, `init_rec_scale`, `lambda_reg`, `lapse_young_init`, `lapse_adult_init`)
-  - `train.*` → `TrainConfig` (`lr`, `epochs`, `batch_size`, `grad_clip`, `warmup_epochs`, `seed`, …)
+  - `train.*` → `TrainConfig` (`lr`, `epochs`, `batch_size`, `grad_clip`, `resume_checkpoint`, `hard_eval_trials_per_gap`, `plateau_patience`, `plateau_factor`, `seed`, …)
   - `eval.*`  → `EvalConfig`  (`trials_per_gap`, `m_values`)
 - **Explicit flags** exist for the common knobs (e.g. `--lr`, `--n-hidden`, `--threshold`, `--a-exo`); see `--help`.
 - **`--set task.foo=bar`** is the generic escape hatch for any field without a flag.
@@ -108,13 +108,29 @@ Two task parameters control stochastic initial states:
 - `task.sigma_init_private` — unit-specific initial-state noise; principally
   broadens trial-to-trial variability independently across the hidden state.
 
-Current defaults are `0.7` shared and `0.05` private. Treat them as a coupled
+Current defaults are `0.3` shared and `0.05` private. Treat them as a coupled
 pair: increase shared variability before increasing private variability when
 the output plans are insufficiently correlated. The initial values
 `model.lapse_young_init` and `model.lapse_adult_init` are legitimate sweep
 knobs, but they initialize learned logits rather than fixing lapse rates.
 Sweep them only after a healthy race is established, and compare final behavior
 rather than treating the initial values as the fitted endpoints.
+
+### Training sampling and scheduler
+
+Primary training samples equal trial counts from five contiguous, equal-width
+gap strata spanning `task.gap_min` through `task.gap_max`. Sampling is uniform
+within each stratum and shuffled across the batch. Consequently,
+`train.batch_size` must be divisible by five. This stratification controls
+finite-batch coverage of the full gap range; it does not itself preferentially
+weight the vortex region.
+
+`train.warmup_epochs` is retained for compatibility with the legacy
+central-hole curriculum helpers, but the primary training path does not use
+that curriculum. The `ReduceLROnPlateau` object is also retained, while its
+defaults (`plateau_patience=99999`, `plateau_factor=0.99999`) effectively keep
+the learning rate fixed. The tachometric loss is too noisy for ordinary
+plateau settings to provide reliable reductions.
 
 ---
 
@@ -162,11 +178,23 @@ Key per-`m` metrics in `metrics.json` / `results.csv`:
 ### Soft training, hard fitness
 
 The gradient-bearing loss is an rPT-weighted binary cross-entropy computed from
-the differentiable mixed-branch curve (`p_goal_mix` and soft commitment times).
+the differentiable mixed-branch trial probabilities (`p_goal_mix`) at their
+emergent rPTs. The target parametric tachometric curve is evaluated at each
+trial's rPT to provide its probability-correct target. The weights are `3.0`
+for 70–200 ms, `1.0` for >200–300 ms, and `0.5` elsewhere. Five-stratum gap
+sampling reduces coverage variance, whereas these explicit loss weights are
+what upweight the vortex and recovery region.
+
 Hard first-threshold crossings are used separately for periodic training
 fitness and for post-training `score` calculation. The hard path applies the
 deadline fallback when no option crosses threshold, then fits summary
 statistics from the resulting empirical tachometric curve.
+
+The crossing penalty belongs only to post-training ranking; it is not included
+in the gradient-bearing loss. It can reject a collapsed race but cannot train
+the network away from one. Periodic hard evaluation must therefore track both
+summary-statistic error and `frac_crossed`, and viable checkpoint selection
+must enforce race health rather than follow the soft loss alone.
 
 Do not compare raw soft loss against the hard `score` as if they were the same
 quantity. The soft loss shapes individual gradient updates; the hard curve is
@@ -185,7 +213,9 @@ invalidates every downstream measurement first. Concretely, in phases:
 Nothing else matters until the decision race reaches threshold on a healthy
 fraction of trials (`frac_crossed` well above the 0.4 penalty knee, ideally
 0.5–0.9). This is a **dynamic-range** problem, not a learning problem.
-- Primary knobs: `task.threshold`, `model.init_rec_scale`, readout gain, `task.a_exo`.
+- Primary knobs: `task.threshold`, readout gain, `task.a_exo`, and initial-state
+  variability. `model.init_rec_scale` only changes the initial low-rank factors
+  and is not a reliable recovery lever once training dominates initialization.
 - After the lapse/initial-state architecture change, re-confirm this gate before
   reusing a previously viable learning rate or rPT grid. `sigma_init_shared` /
   `sigma_init_private` are Phase-0 recovery knobs when their new variability
@@ -194,11 +224,13 @@ fraction of trials (`frac_crossed` well above the 0.4 penalty knee, ideally
 
 ### Phase 1 — Optimization stability ("can it learn at all?")
 Now that gradients flow through a live race, get training to descend cleanly.
-- Order: after a post-architecture crossing check, **learning rate first**
-  (single most impactful, most interacting knob), then `grad_clip`, then
-  `batch_size`, then `warmup_epochs`.
-- Do these on the **smoke** preset. A good LR generalizes across sizes better
-  than most people expect, so lock it before scaling.
+- Order: after a crossing check, **learning rate first** (the most impactful
+  interacting knob), then `grad_clip` and `batch_size`. `warmup_epochs` does
+  not affect primary training.
+- Use smoke runs for wiring and short-horizon diagnostics, but re-establish the
+  learning rate whenever architecture, capacity, timeline, or training-loss
+  resolution changes. Learning-rate viability does not reliably transfer
+  across those boundaries.
 - Success gate: monotone-ish loss decrease over 50 epochs, no NaNs/divergence.
 
 ### Phase 2 — Capacity ("does it have room to fit?")
@@ -233,28 +265,31 @@ before opening the next phase; log every accepted move in
 
 ---
 
-## 8. Principled scale-up plan
+## 8. Validation and promotion plan
 
-Scale in a fixed sequence, re-checking the Phase-1 gate after each step so you
-never debug a training failure and a scale change at the same time:
+The harness now operates at the intended timeline, gap range, rPT resolution,
+rank, and target hidden size. Further work should preserve that full-scale
+problem while separating optimization questions from behavioral measurement:
 
-1. **Epochs first (cheapest signal):** `smoke` but `--epochs 150–300`. Confirms
-   the trend seen at 50 epochs is real and not a transient.
-2. **Evaluation precision:** raise `eval.trials_per_gap` (100 → 200) first. It
-  sharpens the hard curve without changing optimization.
-3. **Training-bin resolution:** drop `task.rpt_step` (30 → 10) only after the
-  race is stable. This changes the soft-binning objective, so repeat the
-  Phase-0/1 checks rather than treating it as evaluation-only.
-4. **Timeline to full length:** restore `task.t_pre/ t_post` and `task.gap_max`
-   to `full` values so the real rPT range is represented.
-5. **Capacity to target:** raise `model.n_hidden` toward 200. Re-confirm the LR
-   from Phase 1 still trains stably (usually yes; nudge down if not).
-6. **Batch + epochs to full:** `batch_size` 64 → 256, `epochs` → 1000.
-7. **Promote:** once a `full`-scale config fits, hand the resolved `config.json`
-   to `run_behavior_fit.py` for the canonical, figure-producing run.
+1. **Establish the live race:** require healthy `frac_crossed` for both
+   maturation states before interpreting curve statistics.
+2. **Tune at fixed scale:** change one optimization or sampling axis at a time,
+   then re-check both the soft loss and hard behavioral diagnostics.
+3. **Use stable hard validation:** compare checkpoints with fixed held-out seeds
+   and adequate `hard_eval_trials_per_gap`; confirm finalists with fresh,
+   larger Monte Carlo evaluation.
+4. **Select viable checkpoints:** minimize hard summary-statistic error only
+   among checkpoints that pass the crossing gate. Do not select by soft BCE
+   alone.
+5. **Promote explicitly:** the resolved `config.json` is the reproducibility
+   record for the optimization harness. The canonical `run_behavior_fit.py`
+   currently reconstructs dataclass defaults rather than loading that file, so
+   promotion requires either transferring the resolved values into its runner
+   or adding config-loading support before treating the canonical run as an
+   exact reproduction.
 
-Rule of thumb: **change one scale axis per step, re-run smoke-length validation,
-then proceed.** If a step breaks training, the culprit is that step.
+Rule of thumb: **change one axis per step and require the hard validation gate
+to survive it.**
 
 ---
 
@@ -288,3 +323,32 @@ narrow, theory-motivated ranges — not blind grids:
 
 The endpoint is not a low `score`; it is a low score achieved **for the right
 mechanistic reasons**, verified by the neural/geometry read-outs.
+
+---
+
+## 10. Current state of affairs
+
+This section is the progressively maintained snapshot of the active
+optimization frontier. Detailed commands and the complete decision history
+remain in [opt_progress.md](opt_progress.md).
+
+The current full-scale comparison exposes a tension between behavioral shape
+and race health:
+
+- **Run 32 is the best viable operating point.** At `n_hidden=200`, `lr=3e-5`,
+  and 200 epochs, it maintains healthy crossing fractions, reproduces the
+  maturation-dependent asymptotes, and produces genuine below-chance vortex
+  depth. Its vortex and rise timing remain late and its fitted `D` values are
+  too shallow.
+- **Run 34 is the strongest vortex-shape diagnostic, not a viable fit.**
+  Five-stratum gap sampling produces the closest `D` values so far and moves
+  vortex/rise timing through the target region, but prolonged training
+  collapses `frac_crossed` to 6–9%. The resulting curve is estimated from a
+  small, selected subset of crossing trials and is behaviorally degenerate.
+
+Together these runs show that sufficient vortex-region gradient signal exists,
+but the current surrogate objective can improve curve shape while sacrificing
+the threshold-crossing race. The immediate optimization problem is therefore
+to retain Run 32's race health while recovering the timing and depth signal
+revealed by Run 34. Hard checkpoint selection must treat `frac_crossed` as a
+viability constraint, not merely another score component.

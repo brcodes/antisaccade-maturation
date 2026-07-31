@@ -55,7 +55,7 @@ For implementation, we use a **continuously varying gap from 0–350 ms**, follo
 ```
 [Fixation: 500–800 ms]
   → Go signal (fixation point offset): t = 0
-  → Gap period: drawn uniformly from 0–350 ms each trial
+    → Gap period: selected from 0–350 ms each trial
   → Cue onset: t = t_go + gap  (bright stimulus, left or right, ±10° eccentricity)
   → Response deadline: saccade must occur within 450 ms of go signal
   → Correct response: saccade to location OPPOSITE the cue (antisaccade)
@@ -216,7 +216,25 @@ A saccade is committed when either z_cue or z_goal first crosses threshold θ. T
 
 **rPT per trial**: `rPT = t_commit − t_cue`, where t_commit is the timestep of threshold crossing. This is computed post-hoc; it is never imposed as a simulation parameter.
 
-**Response deadline**: If neither output crosses θ by T_max = 450 ms (the monkey's deadline; Zhu et al. 2024), the trial is classified as a lapse. Lapses are handled by forcing a response at T_max with direction determined by argmax(z(T_max)). Lapse probability λ is a free parameter initialized to ~0.02 (Salinas et al. 2019, Table 1).
+**Response deadline**: If neither output crosses θ by the end of the simulated
+response window, the hard behavioral path records a non-crossing and forces a
+response at the final timestep using `argmax(z)`. This deadline fallback is
+distinct from the stochastic lapse mechanism: a lapse trial is an explicit
+rule-application failure, whereas a non-crossing trial is a failure of the
+decision race to reach threshold.
+
+**Lapse mechanism**: Training and evaluation include a normal antisaccade
+branch and a lapse branch. Both receive the same cue, go signal, and stochastic
+initial state, but the lapse branch has the rule and maturation inputs removed.
+Their goal probabilities and soft commitment times are mixed by a learned
+maturation-dependent lapse rate
+
+```
+λ(m) = λ_adult + (λ_young - λ_adult) * (1 - m)
+```
+
+whose sigmoid-constrained endpoints are initialized to `λ_young = 0.08` and
+`λ_adult = 0.02`. Evaluation samples the same lapse process explicitly.
 
 ### 2.5 Straight-through estimator (decision B — locked)
 
@@ -224,30 +242,34 @@ The threshold crossing is non-differentiable. Use the straight-through estimator
 
 **Forward pass** (hard, mechanistically faithful):
 ```python
-def find_threshold_crossing(z_history, theta=1.0):
+def find_threshold_crossing(z_history, theta=0.4):
     # z_history: [T x 2]
     for t in range(len(z_history)):
         if z_history[t, 0] > theta or z_history[t, 1] > theta:
             winner = int(torch.argmax(z_history[t]))
             return winner, t
-    # No crossing before deadline: lapse
+    # No crossing before deadline: final-timestep fallback
     winner = int(torch.argmax(z_history[-1]))
     return winner, len(z_history) - 1
 ```
 
 **Backward pass** (soft proxy at t_commit, gradient flows):
 ```python
-def compute_loss(z_history, target, theta=1.0, tau_temp=temperature):
-    with torch.no_grad():
-        _, t_commit = find_threshold_crossing(z_history, theta)
-    # Soft readout AT t_commit — gradients flow through z_history[t_commit]
-    z_at_commit = z_history[t_commit]
-    p = torch.softmax(z_at_commit / tau_temp, dim=0)
-    loss = -torch.log(p[target] + 1e-8)
-    return loss, t_commit
+def straight_through_commitment(z_history, theta=0.4):
+    hard = hard_first_passage(z_history, theta)
+    soft = soft_first_passage(z_history, theta,
+                              commit_temp=0.2, option_temp=0.2)
+    p_goal = hard.p_goal + soft.p_goal - stop_gradient(soft.p_goal)
+    t_commit = hard.t_commit + soft.t_commit - stop_gradient(soft.t_commit)
+    return p_goal, t_commit, hard.crossed
 ```
 
-**Temperature annealing**: Start τ = 5.0 (smooth gradients), anneal toward τ = 0.5 over the first 50% of training epochs. Too-rapid annealing causes gradient instability; too-slow means the soft proxy diverges from the hard decision and training loss no longer reflects the true tachometric curve.
+The engineering threshold is currently `θ = 0.4`. It is a detection threshold
+on unnormalized readout activations and therefore reflects readout scale as
+well as decision dynamics; it should not be interpreted as the monkey's
+biological accumulator bound. The soft first-passage proxy uses fixed
+`commit_temp = 0.2` and `option_temp = 0.2`; there is no temperature annealing
+schedule in the primary training path.
 
 **Why straight-through over soft readout (option c)**: The threshold crossing is the biological event. rPT = t_commit − t_cue, and t_commit is determined by the hard crossing. If a fixed T_commit is used instead, rPT in the model no longer means what rPT means in the data: it becomes the time between cue onset and an arbitrary snapshot, not the time between cue onset and saccade commitment. The tachometric curve's shape — particularly the vortex — depends on the distribution of crossing times across trials. A fixed snapshot collapses this distribution, approximating the curve shape but severing its mechanistic interpretation. The straight-through estimator preserves the mechanism at the cost of noisier gradients.
 
@@ -271,7 +293,7 @@ To produce correlated variability across the two output dimensions (analogous to
 h(0) = h_mean + σ_shared * ε_shared * 1_N + σ_private * ε_private
 ```
 
-where `σ_shared` and `σ_private` are free parameters. High σ_shared relative to σ_private produces the correlated build-up variability seen in the CAS model. Initialize σ_shared ≈ 0.3, σ_private ≈ 0.1.
+where `σ_shared` and `σ_private` are free parameters. High σ_shared relative to σ_private produces the correlated build-up variability seen in the CAS model. Use `σ_shared = 0.3`, `σ_private = 0.05`.
 
 **Expected effect**: This produces realistic RT distributions with the bimodality observed in Zhu et al. 2024 (Fig. 3D) — a mode for captured errors around rPT = 115–121 ms and a mode for correct responses around rPT = 180–198 ms. Without this, those RT distributions will be too narrow to match.
 
@@ -281,7 +303,10 @@ where `σ_shared` and `σ_private` are free parameters. High σ_shared relative 
 
 ### 3.1 Training data and target curve parameters
 
-Training targets are the empirical summary statistics from Zhu et al. 2024 (Section 1.2). The analytical parametric curve form (following Zhu et al. 2024 Methods and Salinas et al. 2019, Eq. 2) is:
+Training targets are the young and adult parametric tachometric curves defined
+by the empirical summary parameters from Zhu et al. 2024 (Section 1.2). The
+analytical curve form (following Zhu et al. 2024 Methods and Salinas et al.
+2019, Eq. 2) is:
 
 ```
 v(x) = max(L(x), R(x), 0)
@@ -303,7 +328,9 @@ Target parameter table (updated from empirical data):
 | D (depth below chance) | 0.28 | 0.27 | Zhu Fig. 3B; D = 0.5 − min |
 | σ_vortex (ms) | ~25 | ~20 | Visual estimate |
 
-Generate N = 5000 trials per rPT bin × 30 bins = 150,000 trials per maturation condition for validation curve generation. During training, use mini-batches with stratified rPT sampling.
+Generate large held-out trial sets for final validation. During training,
+sample equal counts from five contiguous gap strata spanning 0–350 ms; rPT
+remains emergent and is not directly stratified.
 
 ### 3.2 Loss function
 
@@ -311,18 +338,44 @@ Generate N = 5000 trials per rPT bin × 30 bins = 150,000 trials per maturation 
 L = L_behavior + λ_reg * L_regularization
 ```
 
-**Behavioral loss** — summary statistic MSE (more stable than curve-level MSE):
+The optimization and behavioral evaluation protocols are deliberately
+separated:
 
-```python
-L_behavior = Σ_{m ∈ {0,1}} [
-    w_rise    * MSE(t_rise_model,    t_rise_target[m])    +
-    w_asym    * MSE(A_model,         A_target[m])          +
-    w_vortex  * MSE(t_vortex_model,  t_vortex_target[m])  +
-    w_depth   * MSE(D_model,         D_target[m])
-]
-```
+- **Differentiable behavioral training loss:** Each trial produces an emergent
+    `rPT_i = t_commit_i - t_cue_i` through the straight-through commitment path.
+    For that trial's maturation state, the target parametric tachometric curve is
+    evaluated at exactly `rPT_i`, producing a probability-correct target
+    `p_target(rPT_i, m_i)`. The normal and lapse branches produce a mixed soft
+    goal probability `p_goal_mix_i`. Binary cross-entropy compares those two
+    probabilities, and the trial's rPT-region weight scales the result:
 
-**rPT-weighted loss** (Addendum 3): Weight the mini-batch loss by the empirical rPT distribution from Zhu et al. 2024. The 100 ms gap condition, which generates most of the vortex and recovery region (rPT ~70–200 ms), should receive higher weight than the tails. Concretely:
+    ```text
+    L_behavior = mean_i [
+            w(rPT_i) * BCE(p_goal_mix_i, p_target(rPT_i, m_i))
+    ]
+    ```
+
+- **Hard behavioral evaluation:** With gradients disabled, first-threshold
+    crossings generate empirical choices, commitment times, emergent rPTs, and
+    tachometric curves. From those curves, extract `t_rise`, `A`, `t_vortex`,
+    and `D`, and record `frac_crossed` independently. The evaluation score is the
+    weighted hard summary-statistic error plus a penalty below the crossing-fraction
+    viability knee. Periodic evaluation should use fixed held-out seeds for
+    checkpoint comparison; final evaluation should use fresh, larger Monte Carlo
+    samples.
+
+- **Why the protocols are separate:** Hard threshold crossings, empirical
+    binning, and summary-statistic extraction are the scientifically faithful
+    behavioral measurements but do not provide stable gradients. Weighted BCE
+    supplies a smooth optimization signal to Adam, but it is only a surrogate
+    and can improve selected curve regions while damaging the decision race.
+    Therefore, train with BCE, diagnose and select checkpoints with hard behavior,
+    and require a healthy crossing fraction before treating any summary-statistic
+    fit as valid. The crossing penalty is an evaluation/ranking term, not part of
+    the gradient-bearing loss, so it can reject a collapsed race but cannot train
+    the model away from one.
+
+The rPT weighting emphasizes the developmentally informative region:
 
 ```python
 # Empirical rPT weight function — upweight the developmentally informative region
@@ -334,15 +387,16 @@ def rpt_weight(rPT_ms):
     else:
         return 0.5    # guessing tail: low weight
 
-# Apply per trial in mini-batch
-loss_per_trial = cross_entropy(p_correct, target)
-weights = torch.tensor([rpt_weight(rpt) for rpt in batch.rPT])
-L_behavior = (weights * loss_per_trial).mean()
+# Apply per trial at its emergent rPT
+target_probability = target_curve(batch.rPT, batch.m)
+loss_per_trial = binary_cross_entropy(p_goal_mix, target_probability)
+L_behavior = (rpt_weight(batch.rPT) * loss_per_trial).mean()
 ```
 
 This concentrates training pressure on the rPT region where the developmental difference lives (Zhu et al. 2024, Fig. 3B: curves differ primarily between 100–200 ms), preventing the optimizer from finding solutions that fit the asymptote well but miss the vortex/recovery transition.
 
-**Summary statistic extraction** (computed every 50 epochs for validation, not every step):
+**Summary statistic extraction** (computed periodically from the hard
+validation curve, not used as the gradient-bearing loss):
 ```python
 t_rise   = rPT_bins[np.argmin(np.abs(tc_curve - 0.75))]
 t_vortex = rPT_bins[np.argmin(tc_curve)]
@@ -362,18 +416,20 @@ L_reg = ||W_rec||_F^2 + ||r(t)||^2
 
 - **Framework**: PyTorch (preferred) or JAX
 - **Reference implementation**: https://github.com/fmastrogiuseppe/LowRank — adapt for antisaccade inputs and maturation conditioning
-- **Optimizer**: Adam, lr = 1e-3, ReduceLROnPlateau
-- **Batch size**: 256 trials, stratified by rPT bin and maturation condition
-- **Epochs**: 500–2000; early stopping on validation loss
-- **Curriculum**: Epochs 1–100: train only on extreme rPTs (0–50 ms guessing + 250–300 ms asymptote). Epochs 100+: introduce vortex region (90–160 ms) gradually. This prevents collapse to trivial solutions before the exogenous burst dynamics are established.
-- **Initialization**: Xavier for W_in, W_out; small random W_rec (scale 0.1/√N); σ_shared = 0.3, σ_private = 0.1
+- **Optimizer**: Adam; tune learning rate at the active architecture, capacity,
+    timeline, and loss resolution. The full-capacity working baseline is `3e-5`.
+- **Learning-rate scheduler**: `ReduceLROnPlateau` is configured with
+    `patience=99999` and `factor=0.99999`, effectively fixing the learning rate;
+    ordinary plateau settings are unreliable for the noisy tachometric loss.
+- **Batch size**: 200 trials, with equal counts from five contiguous,
+    equal-width gap strata over 0–350 ms. Batch size must be divisible by five.
+- **Epochs and selection**: use bounded training runs with periodic hard
+    validation. Save/select the best checkpoint that passes the crossing gate;
+    do not assume the final epoch or lowest BCE is the best behavioral model.
+- **Curriculum**: no curriculum is active in primary behavior training.
+    `warmup_epochs` and the central-hole helpers remain legacy interfaces only.
+- **Initialization**: Xavier for W_in, W_out; small random W_rec (scale 0.1/√N); σ_shared = 0.3, σ_private = 0.05
 - **Gradient clipping**: clip_norm = 1.0
-
-**Temperature annealing schedule**:
-```python
-tau(epoch) = tau_start * (tau_end / tau_start) ** (epoch / N_anneal_epochs)
-# tau_start = 5.0, tau_end = 0.5, N_anneal_epochs = N_epochs // 2
-```
 
 ### 3.4 Generating the tachometric curve from the model
 
@@ -512,7 +568,7 @@ antisaccade_model/
 ├── training/
 │   ├── train.py                # main training loop with rPT-weighted loss
 │   ├── losses.py               # behavioral loss, rPT weighting, regularization
-│   └── curriculum.py           # rPT curriculum scheduler
+│   └── curriculum.py           # primary gap stratification + legacy curriculum helpers
 ├── analysis/
 │   ├── tachometric_analysis.py # TC generation from model; summary stat extraction
 │   ├── spatial_signal.py       # SI(t, rPT) from hidden units; VM unit selection
@@ -545,50 +601,36 @@ Reference implementation: https://github.com/fmastrogiuseppe/LowRank (Python 2; 
 
 ```python
 model = LRRNN(N=200, rank=2, N_input=5, N_output=2)
-optimizer = Adam(model.parameters(), lr=1e-3)
-targets = load_tachometric_targets()   # young and adult from Zhu et al. 2024
-temperature = AnnealingSchedule(start=5.0, end=0.5, n_epochs=N_epochs//2)
+optimizer = Adam(model.parameters(), lr=3e-5)
+targets = load_tachometric_target_curves()  # young and adult from Zhu et al. 2024
+best_viable_checkpoint = None
 
 for epoch in range(N_epochs):
-    rPT_bins = curriculum_scheduler(epoch)
+    batch = sample_five_stratum_gap_batch(batch_size=200, m_values=[0, 1])
+    h0 = sample_initial_state(batch_size=200, sigma_shared=0.3, sigma_private=0.05)
 
-    for batch in stratified_dataloader(rPT_bins, m_values=[0,1], batch_size=256):
-        # Sample stochastic initial state (Section 2.6)
-        h0 = sample_initial_state(batch.m, sigma_shared, sigma_private)
+    z_normal = model(batch.normal_inputs, h0)
+    z_lapse = model(batch.inputs_without_rule_or_maturation, h0)
+    normal = straight_through_commitment(z_normal, theta=0.4)
+    lapse = soft_first_passage(z_lapse, theta=0.4)
 
-        # Forward pass
-        z_history = model(batch.u, h0)   # [T x batch x 2]
+    p_goal_mix, rpt_mix = mix_branches(normal, lapse, learned_lapse_rate(batch.m))
+    p_target = targets(batch.m, rpt_mix)
+    L_beh = mean(rpt_weight(rpt_mix) * BCE(p_goal_mix, p_target))
+    L_reg = lambda_reg * (model.W_rec.norm('fro')**2 + model.activity_norm())
 
-        # Straight-through: hard crossing (no grad), soft loss at t_commit (grad)
-        tau = temperature(epoch)
-        losses = []
-        t_commits = []
-        for i, z in enumerate(z_history.unbind(1)):
-            with torch.no_grad():
-                winner, t_commit = find_threshold_crossing(z, theta=1.0)
-            loss_i, _ = compute_loss(z, target=1, tau_temp=tau)  # target=1: goal
-            # Apply rPT-based weight
-            rPT_i = t_commit - batch.t_cue[i]
-            losses.append(rpt_weight(rPT_i) * loss_i)
-            t_commits.append(t_commit)
+    optimizer.zero_grad()
+    (L_beh + L_reg).backward()
+    clip_grad_norm_(model.parameters(), 1.0)
+    optimizer.step()
 
-        L_beh = torch.stack(losses).mean()
-        L_reg  = lambda_reg * (model.W_rec.norm('fro')**2 + model.activity_norm())
-        loss   = L_beh + L_reg
-
-        optimizer.zero_grad()
-        loss.backward()
-        clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
-
-    # Validation every 50 epochs
-    if epoch % 50 == 0:
-        for m in [0.0, 1.0]:
-            tc = generate_tachometric_curve(model, m=m, N=500)
-            stats = extract_summary_statistics(tc)
-            log_vs_targets(stats, targets[m])
+    if epoch % hard_eval_interval == 0:
+        validation = evaluate_hard_behavior(model, fixed_held_out_seeds)
+        if validation.frac_crossed_passes_gate and validation.score_is_best:
+            best_viable_checkpoint = save_checkpoint(model)
 
 # Post-training analysis
+model = load_checkpoint(best_viable_checkpoint)
 for m in [0.0, 1.0]:
     si = compute_spatial_signal(model, m=m)
     compare_to_zhu_fig7(si, m=m)
@@ -609,7 +651,7 @@ for m in [0.0, 1.0]:
 | Goal pre-bias increases with m | Stronger presaccadic goal activity for m=1 | Zhu et al. 2024: adult cue/saccade response balance more equal (3.3 vs 7.9 spk/s) | Zhu et al. 2024, Methods |
 | SI sign flip in adult only | m=1 SI < 0 at long rPT; m=0 SI never < 0 | Zhu et al. 2024: adult SROC < 0.5 at long rPT; young SROC stays > 0.5 | Zhu et al. 2024, Fig. 7E |
 | Mutual inhibition in W_rec | Negative cross-coupling between modes | SC/FEF inhibitory interneurons | Salinas et al. 2019 |
-| Lapse rate ~2% | λ ≈ 0.02 | Zhu et al. 2024 adult error tail | Salinas et al. 2019, Table 1 |
+| Learned lapse endpoints | λ_young initialized at 0.08; λ_adult at 0.02 | Maturation-dependent rule failures and adult error tail | Zhu et al. 2024; Salinas et al. 2019 |
 
 ---
 
@@ -622,7 +664,8 @@ for m in [0.0, 1.0]:
 | m=0 and m=1 identical | Network ignores maturation scalar | Check W_in column for m; increase its learning rate |
 | SI never flips sign | Always positive regardless of rPT or m | Endogenous goal signal too weak; check task_rule input weight |
 | RT distribution too narrow | Vortex too sharp; no bimodality | Increase σ_shared; check stochastic h(0) implementation |
-| Gradient explosion | Loss diverges < epoch 20 | Reduce lr to 1e-4; verify clip_norm=1.0 |
+| Gradient explosion | Loss diverges early | Reduce learning rate at the active scale; verify clip_norm=1.0 |
+| Race collapse | Low BCE or plausible curve from few crossing trials | Require a hard `frac_crossed` gate for checkpoint selection |
 | Rank-1 collapse | One mode dominates; no spatial discrimination | Increase rank to 3; add orthogonality regularization on modes |
 | Smooth interpolation fails | Abrupt TC change between m=0 and m=1 | Train on continuous m ~ Uniform(0,1), not just {0,1} |
 | Loss insensitive to vortex | Good asymptote fit, poor vortex fit | Increase rPT weight in 70–200 ms region (Section 3.2) |
@@ -635,7 +678,7 @@ for m in [0.0, 1.0]:
 |---|---|---|
 | 1. Task + target TC + trial generator | 1–2 days | trial_generator.py, tachometric_targets.py |
 | 2. LR-RNN + straight-through + stochastic h(0) | 2–3 days | lrrnn.py, readout.py |
-| 3. Training loop with rPT-weighted loss + curriculum | 1–2 days | train.py, losses.py |
+| 3. Training loop with rPT-weighted loss + stratified gap sampling | 1–2 days | train.py, losses.py |
 | 4. Initial training run (m ∈ {0,1}) | 1 day | Trained checkpoint |
 | 5. Behavioral validation | 1 day | TC plots, summary statistic table vs. Zhu Fig. 3B |
 | 6. RT distribution check | 0.5 days | Correct/error rPT distributions vs. Zhu Fig. 3D |

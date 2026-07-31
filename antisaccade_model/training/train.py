@@ -21,7 +21,7 @@ from ..model.model_params import DEFAULT_MODEL, ModelParams
 from ..task.task_params import DEFAULT_TASK, TaskParams
 from ..task.tachometric_targets import target_summary_stats
 from ..task.trial_generator import build_inputs, sample_initial_state
-from .curriculum import sample_curriculum_gaps
+from .curriculum import sample_stratified_gaps
 from .losses import behavioral_loss
 
 
@@ -30,7 +30,7 @@ class TrainConfig:
     """Optimization and logging configuration."""
 
     epochs: int = 1000
-    batch_size: int = 256
+    batch_size: int = 200
     lr: float = 1e-3
     grad_clip: float = 1.0
     warmup_epochs: int = 10
@@ -89,9 +89,9 @@ def make_batch(
     n_hidden: int = DEFAULT_MODEL.n_hidden,
     m_values: Optional[list[float]] = None,
 ) -> dict:
-    """Assemble a training batch using the curriculum gap schedule."""
+    """Assemble a training batch with equal representation across gap strata."""
     cfg = cfg or TrainConfig()
-    gaps = sample_curriculum_gaps(batch_size, epoch, task, cfg.warmup_epochs, generator)
+    gaps = sample_stratified_gaps(batch_size, task, generator=generator)
     cue_sides = torch.randint(0, 2, (batch_size,), generator=generator)
     m_pool = torch.tensor(cfg.m_choices if m_values is None else m_values)
     sampled_m = m_pool[torch.randint(0, len(m_pool), (batch_size,), generator=generator)]
