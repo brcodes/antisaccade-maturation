@@ -132,6 +132,7 @@ FLAG_TO_KEY = {
     "warmup": "train.warmup_epochs",
     "seed": "train.seed",
     "log_every": "train.log_every",
+    "verify_continue_every": "train.verify_continue_every",
     "plateau_patience": "train.plateau_patience",
     "plateau_factor": "train.plateau_factor",
     "threshold": "task.threshold",
@@ -465,6 +466,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--warmup", type=int)
     p.add_argument("--seed", type=int)
     p.add_argument("--log-every", dest="log_every", type=int)
+    p.add_argument("--verify-continue-every", dest="verify_continue_every", type=int)
     p.add_argument("--plateau-patience", dest="plateau_patience", type=int)
     p.add_argument("--plateau-factor", dest="plateau_factor", type=float)
     p.add_argument("--threshold", type=float)

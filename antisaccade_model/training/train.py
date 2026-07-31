@@ -8,6 +8,8 @@ prediction (gameplan Sections 3.2, 5.3).
 from __future__ import annotations
 
 import os
+import select
+import sys
 from dataclasses import dataclass
 from typing import Optional
 
@@ -35,6 +37,7 @@ class TrainConfig:
     resume_checkpoint: str | None = None
     m_choices: tuple[float, ...] = (0.0, 1.0)
     log_every: int = 10
+    verify_continue_every: int = 10
     hard_eval_trials_per_gap: int = 100
     plateau_patience: int = 99999
     plateau_factor: float = 0.99999
@@ -61,6 +64,20 @@ def _log_plateau_reduction(
         f"min_lr={scheduler.min_lrs} | eps={scheduler.eps:g} | "
         f"old_lr={old_lrs} | new_lr={new_lrs}"
     )
+
+
+def _prompt_to_continue(timeout_seconds: float = 2.0) -> bool:
+    """Return True to continue training; False to stop after the current epoch."""
+    if not sys.stdin.isatty():
+        return True
+    print('stop run? press enter', flush=True)
+    ready, _, _ = select.select([sys.stdin], [], [], timeout_seconds)
+    if not ready:
+        print('continuing', flush=True)
+        return True
+    _ = sys.stdin.readline()
+    print('stopping after current epoch', flush=True)
+    return False
 
 
 def make_batch(
@@ -141,6 +158,10 @@ def train(
                 f"| crossed {record['frac_crossed']:.2f}"
             )
         history.append(record)
+
+        if cfg.verify_continue_every > 0 and (epoch + 1) % cfg.verify_continue_every == 0:
+            if not _prompt_to_continue():
+                break
 
     _save_checkpoint(model, cfg, model_params, task, history)
     return model, history
