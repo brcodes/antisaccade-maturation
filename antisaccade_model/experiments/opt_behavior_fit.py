@@ -132,7 +132,7 @@ FLAG_TO_KEY = {
     "warmup": "train.warmup_epochs",
     "seed": "train.seed",
     "log_every": "train.log_every",
-    "verify_continue_every": "train.verify_continue_every",
+    "graceful_exit": "train.graceful_exit",
     "plateau_patience": "train.plateau_patience",
     "plateau_factor": "train.plateau_factor",
     "threshold": "task.threshold",
@@ -158,6 +158,8 @@ FLAG_TO_KEY = {
 # --------------------------------------------------------------------------- #
 def _coerce(raw: str, reference: Any) -> Any:
     """Coerce a string ``raw`` to the type of ``reference``."""
+    if raw.strip().lower() in ("none", "null", "off"):
+        return None
     if isinstance(reference, bool):
         return raw.strip().lower() in ("1", "true", "yes", "on")
     if isinstance(reference, int):
@@ -466,7 +468,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--warmup", type=int)
     p.add_argument("--seed", type=int)
     p.add_argument("--log-every", dest="log_every", type=int)
-    p.add_argument("--verify-continue-every", dest="verify_continue_every", type=int)
+    p.add_argument("--graceful-exit", dest="graceful_exit", type=int)
     p.add_argument("--plateau-patience", dest="plateau_patience", type=int)
     p.add_argument("--plateau-factor", dest="plateau_factor", type=float)
     p.add_argument("--threshold", type=float)

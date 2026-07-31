@@ -8,8 +8,6 @@ prediction (gameplan Sections 3.2, 5.3).
 from __future__ import annotations
 
 import os
-import select
-import sys
 from dataclasses import dataclass
 from typing import Optional
 
@@ -37,7 +35,7 @@ class TrainConfig:
     resume_checkpoint: str | None = None
     m_choices: tuple[float, ...] = (0.0, 1.0)
     log_every: int = 10
-    verify_continue_every: int = 10
+    graceful_exit: int | None = 1
     hard_eval_trials_per_gap: int = 100
     plateau_patience: int = 99999
     plateau_factor: float = 0.99999
@@ -64,20 +62,6 @@ def _log_plateau_reduction(
         f"min_lr={scheduler.min_lrs} | eps={scheduler.eps:g} | "
         f"old_lr={old_lrs} | new_lr={new_lrs}"
     )
-
-
-def _prompt_to_continue(timeout_seconds: float = 2.0) -> bool:
-    """Return True to continue training; False to stop after the current epoch."""
-    if not sys.stdin.isatty():
-        return True
-    print('stop run? press enter', flush=True)
-    ready, _, _ = select.select([sys.stdin], [], [], timeout_seconds)
-    if not ready:
-        print('continuing', flush=True)
-        return True
-    _ = sys.stdin.readline()
-    print('stopping after current epoch', flush=True)
-    return False
 
 
 def make_batch(
@@ -124,46 +108,51 @@ def train(
     targets = {m: target_summary_stats(m, task) for m in cfg.m_choices}
 
     history: list[dict] = []
-    for epoch in range(cfg.epochs):
-        model.train()
-        batch = make_batch(cfg.batch_size, epoch, task, cfg, generator, model_params.n_hidden)
-
-        optimizer.zero_grad()
-        loss, info = behavioral_loss(model, batch, task, targets, grid)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
-        optimizer.step()
-
-        old_lrs = [group["lr"] for group in optimizer.param_groups]
-        scheduler.step(info["total"])
-        new_lrs = [group["lr"] for group in optimizer.param_groups]
-        if new_lrs != old_lrs:
-            _log_plateau_reduction(epoch, scheduler, old_lrs, new_lrs, float(info["total"]))
-
-        record = {"epoch": epoch, "loss": float(info["total"]),
-                  "curve": float(info["curve"]), "reg": float(info["reg"]),
-                  "frac_crossed": float(info["frac_crossed"])}
-
-        if epoch % cfg.log_every == 0 or epoch == cfg.epochs - 1:
-            model.eval()
-            hard_mse, hard_stats = hard_summary_stat_mse(
-                model, task, targets, cfg.m_choices, cfg.hard_eval_trials_per_gap
-            )
+    interrupted = False
+    try:
+        for epoch in range(cfg.epochs):
             model.train()
-            record["hard_summary_mse"] = hard_mse
-            record["hard_stats"] = hard_stats
-            print(
-                f"epoch {epoch:4d} | loss {record['loss']:.5f} "
-                f"| curve {record['curve']:.5f} | hard {hard_mse:.5f} | reg {record['reg']:.5f} "
-                f"| crossed {record['frac_crossed']:.2f}"
-            )
-        history.append(record)
+            batch = make_batch(cfg.batch_size, epoch, task, cfg, generator, model_params.n_hidden)
 
-        if cfg.verify_continue_every > 0 and (epoch + 1) % cfg.verify_continue_every == 0:
-            if not _prompt_to_continue():
-                break
+            optimizer.zero_grad()
+            loss, info = behavioral_loss(model, batch, task, targets, grid)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+            optimizer.step()
+
+            old_lrs = [group["lr"] for group in optimizer.param_groups]
+            scheduler.step(info["total"])
+            new_lrs = [group["lr"] for group in optimizer.param_groups]
+            if new_lrs != old_lrs:
+                _log_plateau_reduction(epoch, scheduler, old_lrs, new_lrs, float(info["total"]))
+
+            record = {"epoch": epoch, "loss": float(info["total"]),
+                      "curve": float(info["curve"]), "reg": float(info["reg"]),
+                      "frac_crossed": float(info["frac_crossed"])}
+
+            if epoch % cfg.log_every == 0 or epoch == cfg.epochs - 1:
+                model.eval()
+                hard_mse, hard_stats = hard_summary_stat_mse(
+                    model, task, targets, cfg.m_choices, cfg.hard_eval_trials_per_gap
+                )
+                model.train()
+                record["hard_summary_mse"] = hard_mse
+                record["hard_stats"] = hard_stats
+                print(
+                    f"epoch {epoch:4d} | loss {record['loss']:.5f} "
+                    f"| curve {record['curve']:.5f} | hard {hard_mse:.5f} | reg {record['reg']:.5f} "
+                    f"| crossed {record['frac_crossed']:.2f}"
+                )
+            history.append(record)
+    except KeyboardInterrupt:
+        if not cfg.graceful_exit:
+            raise
+        interrupted = True
+        print("KeyboardInterrupt received; saving partial training state.")
 
     _save_checkpoint(model, cfg, model_params, task, history)
+    if interrupted:
+        print("Stopped early after graceful exit.")
     return model, history
 
 
